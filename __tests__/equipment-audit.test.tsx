@@ -33,7 +33,7 @@ it('busca un banco prone, lo marca como disponible y lo guarda solo en ese entor
   expect(await screen.findByText('Banco prone o de pecho apoyado (boca abajo)')).toBeTruthy();
   expect(screen.queryByText('Banco plano fijo')).toBeNull();
 
-  await fireEvent.press(screen.getByText('Tengo'));
+  await fireEvent.press(screen.getByLabelText('Tengo: Banco prone o de pecho apoyado (boca abajo)'));
   const home = await ensureEnvironment(db, a.id, 'home');
   const gym = await ensureEnvironment(db, a.id, 'gym');
   await waitFor(async () => expect(await getInventory(db, home)).toEqual({ bench_prone: 'available' }));

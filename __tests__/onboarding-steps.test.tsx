@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { migrate } from '../src/db';
-import { getDrafts, hasConsent } from '../src/db/onboarding';
+import { getDrafts, hasConsent, saveDraft } from '../src/db/onboarding';
 import { createProfile } from '../src/db/profiles';
-import { summarize, validateStep } from '../src/lib/onboarding';
+import { onboardingProgress, summarize, validateStep } from '../src/lib/onboarding';
 import OnboardingStep from '../src/app/onboarding/[step]';
 import { memoryDb } from '../test-utils/sqlite';
 
@@ -83,4 +83,30 @@ it('el consentimiento de IA nace desactivado y solo se registra si se marca; se 
   await fireEvent.press(screen.getByText('Permitir proponer mi plan con IA'));
   await fireEvent.press(screen.getByText('Guardar y salir'));
   await waitFor(async () => expect(await hasConsent(db, a.id, 'ai_plan')).toBe(false));
+});
+
+it('onboardingProgress cuenta las etapas guardadas y propone la primera pendiente', () => {
+  expect(onboardingProgress({})).toEqual({ done: 0, total: 6, next: 2 });
+  expect(onboardingProgress({ 2: {}, 3: {}, 5: {} })).toEqual({ done: 3, total: 6, next: 4 });
+  expect(onboardingProgress({ 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {} })).toEqual({ done: 6, total: 6, next: 8 });
+});
+
+it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «Continuar» pasa a la 7', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['gym'] });
+  mockApp = { db, profile: a };
+  mockStep = '6';
+  mockReplace.mockClear();
+  await render(<OnboardingStep />);
+
+  await fireEvent.press(await screen.findByLabelText('Tengo: Banco plano fijo'));
+  await fireEvent.press(screen.getByText('Guardar y salir'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
+  expect((await getDrafts(db, a.id))[6]).toEqual({});
+
+  mockReplace.mockClear();
+  await fireEvent.press(screen.getByText('Continuar'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/7'));
 });

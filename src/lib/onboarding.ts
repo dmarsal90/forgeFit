@@ -122,3 +122,11 @@ export function summarize(step: number, values: StepValues): string[] {
     return labels.length ? [`${f.label.replace(/ \(.*\)$/, '')}: ${labels.join(', ')}`] : [];
   });
 }
+
+const FORM_STEPS = [2, 3, 4, 5, 6, 7];
+
+/** Etapas guardadas (de 2 a 7) y la siguiente a completar; si no falta ninguna, la revisión (8). */
+export function onboardingProgress(drafts: Record<number, unknown>) {
+  const done = FORM_STEPS.filter((n) => drafts[n] !== undefined).length;
+  return { done, total: FORM_STEPS.length, next: FORM_STEPS.find((n) => drafts[n] === undefined) ?? LAST_STEP };
+}

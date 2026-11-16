@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, View } from 'react-native';
 import { CATALOG, CatalogItem, FAMILIES, searchCatalog } from '../data/equipment';
 import { ENV_LABELS, EnvKind, ensureEnvironment, getInventory, ItemState, markNoEquipment, setItemState } from '../db/inventory';
@@ -26,20 +26,40 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   );
 }
 
-function StateButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function IconToggle({ icon, label, active, tint, onPress }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; active: boolean; tint: string; onPress: () => void;
+}) {
   return (
     <Pressable
-      accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress}
+      accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={onPress}
       style={{
-        flex: 1, minHeight: MIN_TOUCH, borderRadius: radius.button, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: space.xs,
-        borderWidth: active ? 1.5 : 1, borderColor: active ? colors.accent : colors.border, backgroundColor: colors.surfaceAlt,
+        width: MIN_TOUCH, height: MIN_TOUCH, borderRadius: radius.button, alignItems: 'center', justifyContent: 'center',
+        borderWidth: active ? 1.5 : 1, borderColor: active ? tint : colors.border, backgroundColor: active ? tint : colors.surfaceAlt,
       }}
     >
-      {active ? <Ionicons name="checkmark-circle" size={18} color={colors.accent} /> : null}
-      <Text variant="caption">{label}</Text>
+      <Ionicons name={icon} size={22} color={active ? colors.onAccent : colors.textMuted} />
     </Pressable>
   );
 }
+
+// Memoizada: al marcar un equipo solo se repinta su fila, no las ~275 del catálogo.
+const ItemRow = memo(function ItemRow({ item, state, onSet }: {
+  item: CatalogItem; state: ItemState | undefined; onSet: (id: string, prev: ItemState | null, next: ItemState | null) => void;
+}) {
+  const prev = state ?? null;
+  return (
+    <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, marginBottom: space.sm }}>
+      <View style={{ flex: 1 }}>
+        <Text>{item.es}</Text>
+        <Text variant="caption" muted numberOfLines={1}>{item.en}</Text>
+      </View>
+      <IconToggle icon="checkmark" label={`Tengo: ${item.es}`} active={state === 'available'} tint={colors.accent}
+        onPress={() => onSet(item.id, prev, prev === 'available' ? null : 'available')} />
+      <IconToggle icon="close" label={`No tengo: ${item.es}`} active={state === 'unavailable'} tint={colors.error}
+        onPress={() => onSet(item.id, prev, prev === 'unavailable' ? null : 'unavailable')} />
+    </Card>
+  );
+});
 
 export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnvironments }: {
   profileId: string; onNext: () => void; onExit: () => void; onBack: () => void; onPickEnvironments: () => void;
@@ -71,16 +91,15 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
     return () => { live = false; setEnvId(null); };
   }, [db, profileId, kind]);
 
-  const set = useCallback(async (itemId: string, state: ItemState) => {
+  const set = useCallback(async (itemId: string, prev: ItemState | null, next: ItemState | null) => {
     if (!envId) return;
-    const prev = inventory[itemId] ?? null;
-    const next = prev === state ? null : state; // volver a pulsar = «sin indicar»
-    setInventory((v) => { const c = { ...v }; if (next) c[itemId] = next; else delete c[itemId]; return c; });
+    const apply = (st: ItemState | null) => setInventory((v) => { const c = { ...v }; if (st) c[itemId] = st; else delete c[itemId]; return c; });
+    apply(next);
     try { await setItemState(db, envId, itemId, next); setError(null); } catch {
-      setInventory((v) => { const c = { ...v }; if (prev) c[itemId] = prev; else delete c[itemId]; return c; });
+      apply(prev);
       setError('No se pudo guardar el cambio.');
     }
-  }, [db, envId, inventory]);
+  }, [db, envId]);
 
   async function noEquipment() {
     if (!envId) return;
@@ -129,6 +148,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         <Chip label="Todos" selected={family === null} onPress={() => setFamily(null)} />
         {FAMILIES.map((f) => <Chip key={f.id} label={f.label} selected={family === f.id} onPress={() => setFamily(family === f.id ? null : f.id)} />)}
       </ScrollView>
+      <Text variant="caption" muted>✓ Tengo · ✕ No tengo · sin marcar = sin indicar</Text>
       <Text variant="caption" muted accessibilityLiveRegion="polite">
         {counts.yes} disponibles · {counts.no} no disponibles · {CATALOG.length - counts.yes - counts.no} sin indicar
       </Text>
@@ -140,32 +160,26 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
   return (
     <Screen scroll={false}>
       <FlatList
+        style={{ flex: 1 }}
         data={rows}
         keyExtractor={(r) => r.key}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={header}
         ListEmptyComponent={<Text muted>Ningún equipo coincide con tu búsqueda.</Text>}
-        ListFooterComponent={
-          <View style={{ gap: space.md, paddingTop: space.lg }}>
-            <Button label="Continuar" icon="arrow-forward" onPress={onNext} />
-            <Button variant="secondary" label="Guardar y salir" onPress={onExit} />
-          </View>
-        }
+        extraData={inventory}
+        initialNumToRender={14}
+        windowSize={7}
+        maxToRenderPerBatch={14}
         renderItem={({ item: r }) => 'header' in r ? (
           <Text variant="subtitle" style={{ paddingTop: space.lg, paddingBottom: space.sm }} accessibilityRole="header">{r.header}</Text>
         ) : (
-          <Card style={{ gap: space.sm, marginBottom: space.sm }}>
-            <View>
-              <Text variant="subtitle">{r.item.es}</Text>
-              <Text variant="caption" muted>{r.item.en}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <StateButton label="Tengo" active={inventory[r.item.id] === 'available'} onPress={() => set(r.item.id, 'available')} />
-              <StateButton label="No tengo" active={inventory[r.item.id] === 'unavailable'} onPress={() => set(r.item.id, 'unavailable')} />
-            </View>
-          </Card>
+          <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} />
         )}
       />
+      <View style={{ gap: space.sm, paddingTop: space.md }}>
+        <Button label="Continuar" icon="arrow-forward" onPress={onNext} />
+        <Button variant="secondary" label="Guardar y salir" onPress={onExit} />
+      </View>
     </Screen>
   );
 }
