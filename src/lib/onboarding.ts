@@ -30,6 +30,8 @@ const muscleLimitations: Option[] = [
   { value: 'glutes', label: 'Glúteos' }, { value: 'adductors', label: 'Aductores' }, { value: 'hamstrings', label: 'Isquiotibiales' },
   { value: 'quadriceps', label: 'Cuádriceps' }, { value: 'calves', label: 'Gemelos y sóleo' }, { value: 'hip_flexors', label: 'Flexores de cadera' },
 ];
+export const JOINT_IDS = ids(jointLimitations);
+export const MUSCLE_IDS = ids(muscleLimitations);
 const week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z
