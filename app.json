@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "ForgeFit",
+    "slug": "forgefit",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "forgefit",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#101318",
+    "android": {
+      "package": "app.forgefit",
+      "adaptiveIcon": {
+        "backgroundImage": "./assets/images/android-background.png",
+        "foregroundImage": "./assets/images/android-foreground.png",
+        "monochromeImage": "./assets/images/android-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#101318",
+          "image": "./assets/images/mark.png",
+          "imageWidth": 160
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
