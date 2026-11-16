@@ -11,4 +11,19 @@ export const migrations: string[] = [
      updated_at TEXT NOT NULL
    );
    CREATE TABLE app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);`,
+  `CREATE TABLE onboarding_drafts (
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     step INTEGER NOT NULL CHECK (step BETWEEN 1 AND 8),
+     data_json TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (profile_id, step)
+   );
+   CREATE TABLE user_consents (
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     kind TEXT NOT NULL,
+     version INTEGER NOT NULL,
+     granted_at TEXT NOT NULL,
+     revoked_at TEXT,
+     PRIMARY KEY (profile_id, kind)
+   );`,
 ];
