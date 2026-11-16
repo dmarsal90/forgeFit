@@ -26,3 +26,13 @@ export type PlanItem = z.infer<typeof item>;
 export type PlanBlock = z.infer<typeof block>;
 export type PlanSession = z.infer<typeof session>;
 export type Plan = z.infer<typeof planSchema>;
+
+/** Próxima sesión desde hoy (0 = lunes … 6 = domingo): hoy si toca, si no la siguiente de la semana. */
+export function nextSession(plan: Plan, today: number): { session: PlanSession; isToday: boolean } {
+  const sorted = [...plan.sessions].sort((a, b) => a.day - b.day);
+  const upcoming = sorted.find((s) => s.day >= today) ?? sorted[0];
+  return { session: upcoming, isToday: upcoming.day === today };
+}
+
+/** Lunes = 0, a partir de Date.getDay() (domingo = 0). */
+export const todayIndex = (d = new Date()) => (d.getDay() + 6) % 7;

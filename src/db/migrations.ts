@@ -42,4 +42,15 @@ export const migrations: string[] = [
      updated_at TEXT NOT NULL,
      PRIMARY KEY (environment_id, equipment_id)
    );`,
+  // shortcut: el plan se guarda como JSON validado (planSchema); normalizar a días/bloques/series cuando la sesión activa (Fase 5) lo necesite.
+  `CREATE TABLE training_plans (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     environment_id TEXT REFERENCES training_environments(id) ON DELETE SET NULL,
+     mode TEXT NOT NULL CHECK (mode IN ('local','ai','hybrid')),
+     status TEXT NOT NULL CHECK (status IN ('active','archived')),
+     plan_json TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE UNIQUE INDEX one_active_plan_per_profile ON training_plans(profile_id) WHERE status = 'active';`,
 ];

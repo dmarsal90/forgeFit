@@ -1,5 +1,5 @@
-import { EXERCISES, type Exercise, type Level, type Variant } from '../data/exercises';
-import { meets } from './exercises';
+import type { Level } from '../data/exercises';
+import { findVariant, meets } from './exercises';
 import { LIMITATION_LABEL } from './onboarding';
 import { planSchema, type Plan, type PlanSession } from './plan';
 
@@ -12,10 +12,6 @@ export type PlanContext = {
 };
 export type Issue = { severity: 'error' | 'warning'; code: string; path: string; message: string };
 export type Validation = { ok: boolean; issues: Issue[] };
-
-const byVariant = new Map<string, { ex: Exercise; variant: Variant }>(
-  EXERCISES.flatMap((ex) => ex.variants.map((variant) => [variant.id, { ex, variant }] as const)),
-);
 
 const label = (ids: string[]) => ids.map((i) => LIMITATION_LABEL[i] ?? i).join(', ');
 const WARMUP_MIN = 5;
@@ -62,7 +58,7 @@ export function validatePlan(input: unknown, ctx: PlanContext): Validation {
 
     s.blocks.forEach((b, bi) => b.items.forEach((it, ii) => {
       const ip = `${sp}.blocks.${bi}.items.${ii}`;
-      const found = byVariant.get(it.exerciseVariantId);
+      const found = findVariant(it.exerciseVariantId);
       if (!found) { add('error', 'unknown_variant', `${ip}.exerciseVariantId`, `Ejercicio inexistente: ${it.exerciseVariantId}`); return; }
       const { ex, variant } = found;
 

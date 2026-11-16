@@ -33,7 +33,7 @@ const muscleLimitations: Option[] = [
 export const JOINT_IDS = ids(jointLimitations);
 export const MUSCLE_IDS = ids(muscleLimitations);
 export const LIMITATION_LABEL: Record<string, string> = Object.fromEntries([...jointLimitations, ...muscleLimitations].map((x) => [x.value, x.label.toLowerCase()]));
-const week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z
   .object({ primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'), secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional() })
@@ -72,7 +72,7 @@ export const STEPS: Record<number, StepDef> = {
   4: {
     title: 'Tu disponibilidad', intro: 'Días y tiempo reales; el plan se adapta a ellos.', schema: availabilitySchema,
     fields: [
-      { key: 'days', label: 'Días en que puedes entrenar', multi: true, options: week.map((label, value) => ({ value, label })) },
+      { key: 'days', label: 'Días en que puedes entrenar', multi: true, options: WEEKDAYS.map((label, value) => ({ value, label })) },
       { key: 'minutes', label: 'Minutos por sesión', options: [30, 45, 60, 90].map((m) => ({ value: m, label: `${m} min` })) },
     ],
   },

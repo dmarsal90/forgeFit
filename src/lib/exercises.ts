@@ -12,3 +12,6 @@ export const availableVariants = (ex: Exercise, have: ReadonlySet<string>): Vari
 
 export const availableExercises = (have: ReadonlySet<string>): Exercise[] =>
   EXERCISES.filter((ex) => availableVariants(ex, have).length > 0);
+
+const variants = new Map(EXERCISES.flatMap((ex) => ex.variants.map((variant) => [variant.id, { ex, variant }] as const)));
+export const findVariant = (variantId: string) => variants.get(variantId);

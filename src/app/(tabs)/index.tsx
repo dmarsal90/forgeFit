@@ -1,36 +1,59 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { getDrafts } from '../../db/onboarding';
+import { getActivePlan } from '../../db/plans';
 import { useApp } from '../../features/AppContext';
-import { onboardingProgress } from '../../lib/onboarding';
-import { Button, EmptyState, Screen, Text } from '../../ui/components';
+import { describeItem } from '../../features/PlanView';
+import { onboardingProgress, WEEKDAYS } from '../../lib/onboarding';
+import { nextSession, todayIndex, type Plan } from '../../lib/plan';
+import { Button, Card, EmptyState, Screen, Text } from '../../ui/components';
+import { space } from '../../ui/tokens';
 
 export default function Home() {
   const { db, profile } = useApp();
   const [progress, setProgress] = useState<ReturnType<typeof onboardingProgress> | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
 
-  // Al volver a Inicio (p. ej. tras «Guardar y salir») se relee el progreso del perfil activo.
+  // Al volver a Inicio (p. ej. tras guardar o aceptar un plan) se relee el estado del perfil activo.
   useFocusEffect(useCallback(() => {
     if (!profile) return;
     getDrafts(db, profile.id).then((d) => setProgress(onboardingProgress(d))).catch(() => setProgress(null));
+    getActivePlan(db, profile.id).then(setPlan).catch(() => setPlan(null));
   }, [db, profile]));
 
   const started = !!progress && progress.done > 0;
   const ready = !!progress && progress.done === progress.total;
-  const label = !started ? 'Configurar plan' : ready ? 'Revisar mi configuración' : 'Continuar configuración';
+  const next = plan ? nextSession(plan, todayIndex()) : null;
+
   return (
     <Screen>
       <Text variant="display">Hola{profile ? `, ${profile.alias}` : ''}</Text>
-      <EmptyState
-        icon={ready ? 'checkmark-circle-outline' : 'flash-outline'}
-        title={ready ? 'Configuración lista' : 'Configura tu plan'}
-        body={ready
-          ? 'Tus respuestas están guardadas en este dispositivo. La generación de tu plan llegará en una próxima versión.'
-          : 'Aún no tienes un plan. Cuando lo crees, aquí verás tu sesión de hoy y tu progreso real.'}
-      >
-        {started ? <Text muted accessibilityLiveRegion="polite">{progress.done} de {progress.total} etapas guardadas</Text> : null}
-        <Button label={label} variant="secondary" disabled={!profile} onPress={() => router.push(`/onboarding/${started ? progress.next : 2}`)} />
-      </EmptyState>
+      {plan && next ? (
+        <Card style={{ gap: space.sm }}>
+          <Text variant="caption" muted>{next.isToday ? 'Hoy' : `Próxima sesión · ${WEEKDAYS[next.session.day]}`}</Text>
+          <Text variant="title">{next.session.name}</Text>
+          {next.session.blocks.flatMap((b) => b.items).slice(0, 5).map((it, i) => (
+            <Text key={i} muted>{describeItem(it).name}</Text>
+          ))}
+          <Button label="Ver mi plan" variant="secondary" onPress={() => router.push('/plan')} />
+        </Card>
+      ) : (
+        <EmptyState
+          icon={ready ? 'checkmark-circle-outline' : 'flash-outline'}
+          title={ready ? 'Configuración lista' : 'Configura tu plan'}
+          body={ready
+            ? 'Tus respuestas están guardadas en este dispositivo. Genera tu plan cuando quieras.'
+            : 'Aún no tienes un plan. Cuando lo crees, aquí verás tu sesión de hoy y tu progreso real.'}
+        >
+          {started ? <Text muted accessibilityLiveRegion="polite">{progress.done} de {progress.total} etapas guardadas</Text> : null}
+          {ready ? <Button label="Generar mi plan" disabled={!profile} onPress={() => router.push('/plan/proposal')} /> : null}
+          <Button
+            label={!started ? 'Configurar plan' : ready ? 'Revisar mi configuración' : 'Continuar configuración'}
+            variant={ready ? 'secondary' : 'primary'} disabled={!profile}
+            onPress={() => router.push(`/onboarding/${started ? progress.next : 2}`)}
+          />
+        </EmptyState>
+      )}
     </Screen>
   );
 }
