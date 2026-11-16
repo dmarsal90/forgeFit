@@ -108,6 +108,6 @@ it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «
   expect((await getDrafts(db, a.id))[6]).toEqual({});
 
   mockReplace.mockClear();
-  await fireEvent.press(screen.getAllByText('Continuar')[0]); // el de arriba, sin hacer scroll
+  await fireEvent.press(screen.getByText('Continuar'));
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/7'));
 });

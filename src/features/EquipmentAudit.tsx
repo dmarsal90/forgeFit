@@ -179,12 +179,9 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   return (
     <Screen scroll={false}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: space.sm }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={onBack} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
-          <Text muted>← Volver</Text>
-        </Pressable>
-        <Button label="Continuar" icon="arrow-forward" onPress={onNext} />
-      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={onBack} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
+        <Text muted>← Volver</Text>
+      </Pressable>
       <FlatList
         style={{ flex: 1 }}
         data={rows}

@@ -59,7 +59,7 @@ it('los grupos nacen plegados, se despliegan al tocarlos y la búsqueda los desp
   expect((await screen.findAllByText(/Hack squat/)).length).toBeGreaterThan(0);
 });
 
-it('Continuar está arriba, sin necesidad de bajar por la lista', async () => {
+it('Continuar está siempre visible (barra fija), sin bajar por la lista', async () => {
   const db = memoryDb();
   await migrate(db);
   const a = await createProfile(db, { alias: 'Ana' });
@@ -67,6 +67,6 @@ it('Continuar está arriba, sin necesidad de bajar por la lista', async () => {
   mockApp = { db, profile: a };
   const onNext = jest.fn();
   await render(<EquipmentAudit profileId={a.id} onNext={onNext} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
-  await fireEvent.press((await screen.findAllByText('Continuar'))[0]);
+  await fireEvent.press(await screen.findByText('Continuar'));
   expect(onNext).toHaveBeenCalledTimes(1);
 });
