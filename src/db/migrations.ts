@@ -26,4 +26,20 @@ export const migrations: string[] = [
      revoked_at TEXT,
      PRIMARY KEY (profile_id, kind)
    );`,
+  `CREATE TABLE training_environments (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     kind TEXT NOT NULL CHECK (kind IN ('home','gym','outdoor','travel')),
+     name TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     UNIQUE (profile_id, kind)
+   );
+   -- Estado ausente de fila = desconocido («sin indicar»); solo se guardan las confirmaciones.
+   CREATE TABLE environment_inventory (
+     environment_id TEXT NOT NULL REFERENCES training_environments(id) ON DELETE CASCADE,
+     equipment_id TEXT NOT NULL,
+     state TEXT NOT NULL CHECK (state IN ('available','unavailable')),
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (environment_id, equipment_id)
+   );`,
 ];
