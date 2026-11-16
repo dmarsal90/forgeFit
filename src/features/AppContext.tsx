@@ -1,23 +1,28 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Db, openDb } from '../db';
-import { getActiveProfile, Profile } from '../db/profiles';
+import { countProfiles, getActiveProfile, Profile } from '../db/profiles';
 
-type Ctx = { db: Db; profile: Profile | null; setProfile: (p: Profile | null) => void };
+type Ctx = { db: Db; profile: Profile | null; profileCount: number; refresh: () => Promise<void> };
+type State = { profile: Profile | null; profileCount: number };
 const AppCtx = createContext<Ctx | null>(null);
 
 export function AppProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
   const [db, setDb] = useState<Db | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [state, setState] = useState<State>({ profile: null, profileCount: 0 });
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    openDb()
-      .then(async (d) => { setProfile(await getActiveProfile(d)); setDb(d); })
-      .catch(setError);
+  const load = useCallback(async (d: Db) => {
+    setState({ profile: await getActiveProfile(d), profileCount: await countProfiles(d) });
   }, []);
 
-  const set = useCallback((p: Profile | null) => setProfile(p), []);
-  const value = useMemo(() => (db ? { db, profile, setProfile: set } : null), [db, profile, set]);
+  useEffect(() => {
+    openDb().then(async (d) => { await load(d); setDb(d); }).catch(setError);
+  }, [load]);
+
+  const value = useMemo(
+    () => (db ? { db, ...state, refresh: () => load(db) } : null),
+    [db, state, load],
+  );
   if (error) throw error; // lo captura el ErrorBoundary de expo-router
   if (!value) return <>{fallback}</>;
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

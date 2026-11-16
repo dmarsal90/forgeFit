@@ -10,7 +10,7 @@ import { space } from '../../ui/tokens';
 type Model = 'male' | 'female' | undefined;
 
 export default function CreateProfile() {
-  const { db, setProfile } = useApp();
+  const { db, refresh } = useApp();
   const [alias, setAlias] = useState('');
   const [model, setModel] = useState<Model>(undefined);
   const [age, setAge] = useState('');
@@ -30,7 +30,8 @@ export default function CreateProfile() {
     setErrors({});
     setSaving(true);
     try {
-      setProfile(await createProfile(db, parsed.data));
+      await createProfile(db, parsed.data);
+      await refresh();
       router.replace('/(tabs)');
     } catch {
       setSaveError('No se pudo guardar el perfil. Inténtalo de nuevo.');
