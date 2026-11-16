@@ -58,3 +58,17 @@ it('borrar elimina el perfil y limpia el activo; el otro perfil sigue intacto', 
   expect(await getActiveProfile(db)).toBeNull();
   expect((await listProfiles(db)).map((p) => p.id)).toEqual([a.id]);
 });
+
+it('crea perfiles aunque no exista globalThis.crypto (Hermes) y con ids distintos', async () => {
+  const db = await fresh();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true });
+  try {
+    const a = await createProfile(db, { alias: 'Ana' });
+    const b = await createProfile(db, { alias: 'Beto' });
+    expect(a.id).toMatch(/^[0-9a-f]{32}$/);
+    expect(a.id).not.toBe(b.id);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'crypto', saved); else delete (globalThis as { crypto?: unknown }).crypto;
+  }
+});
