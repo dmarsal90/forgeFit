@@ -59,3 +59,15 @@ export async function markNoEquipment(db: Db, environmentId: string) {
 
 export const clearInventory = (db: Db, environmentId: string) =>
   db.runAsync('DELETE FROM environment_inventory WHERE environment_id = ?', [environmentId]);
+
+/** Recuento por entorno del perfil, para la revisión. */
+export async function inventorySummary(db: Db, profileId: string) {
+  return db.getAllAsync<{ kind: EnvKind; available: number; unavailable: number }>(
+    `SELECT e.kind AS kind,
+            COALESCE(SUM(i.state = 'available'), 0) AS available,
+            COALESCE(SUM(i.state = 'unavailable'), 0) AS unavailable
+     FROM training_environments e LEFT JOIN environment_inventory i ON i.environment_id = e.id
+     WHERE e.profile_id = ? GROUP BY e.id ORDER BY e.rowid`,
+    [profileId],
+  );
+}

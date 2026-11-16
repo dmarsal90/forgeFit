@@ -1,8 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { ENV_LABELS, inventorySummary } from '../../db/inventory';
 import { getDrafts, grantConsent, hasConsent, revokeConsent, saveDraft } from '../../db/onboarding';
 import { useApp } from '../../features/AppContext';
+import { EquipmentAudit } from '../../features/EquipmentAudit';
 import { LAST_STEP, STEPS, StepValues, summarize, validateStep } from '../../lib/onboarding';
 import { Button, Card, Choice, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
@@ -14,7 +16,24 @@ export default function OnboardingStep() {
   useEffect(() => { if (!valid) router.replace('/(tabs)'); }, [valid]);
   // key por etapa: al cambiar de etapa el estado del formulario se reinicia solo
   if (!valid) return null;
-  return n === LAST_STEP ? <Review profileId={profile.id} /> : <Step key={n} n={n} profileId={profile.id} />;
+  if (n === LAST_STEP) return <Review profileId={profile.id} />;
+  if (n === 6) return <Equipment profileId={profile.id} />;
+  return <Step key={n} n={n} profileId={profile.id} />;
+}
+
+function Equipment({ profileId }: { profileId: string }) {
+  const { db } = useApp();
+  // Continuar deja constancia de que la etapa se vio; el inventario ya se guarda al marcar cada equipo.
+  const done = (to: string) => saveDraft(db, profileId, 6, {}).then(() => router.replace(to as never)).catch(() => router.replace(to as never));
+  return (
+    <EquipmentAudit
+      profileId={profileId}
+      onNext={() => done('/onboarding/7')}
+      onExit={() => done('/(tabs)')}
+      onBack={() => router.replace('/onboarding/5')}
+      onPickEnvironments={() => router.replace('/onboarding/5')}
+    />
+  );
 }
 
 function Step({ n, profileId }: { n: number; profileId: string }) {
@@ -103,8 +122,15 @@ function Review({ profileId }: { profileId: string }) {
   const { db } = useApp();
   const [drafts, setDrafts] = useState<Record<number, unknown> | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [inventoryLines, setInventoryLines] = useState<string[]>([]);
 
-  useEffect(() => { getDrafts(db, profileId).then(setDrafts).catch(() => setLoadError(true)); }, [db, profileId]);
+  useEffect(() => {
+    getDrafts(db, profileId).then(setDrafts).catch(() => setLoadError(true));
+    inventorySummary(db, profileId)
+      .then((rows) => setInventoryLines(rows.filter((r) => r.available + r.unavailable > 0)
+        .map((r) => `${ENV_LABELS[r.kind]}: ${r.available} disponibles, ${r.unavailable} no disponibles`)))
+      .catch(() => setLoadError(true));
+  }, [db, profileId]);
 
   const missing = [2, 4].filter((n) => drafts && !drafts[n]);
   return (
@@ -116,7 +142,7 @@ function Review({ profileId }: { profileId: string }) {
       <Text variant="title">Revisión</Text>
       {loadError ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">No se pudo cargar tu progreso.</Text> : null}
       {drafts ? Object.keys(STEPS).map(Number).map((n) => {
-        const lines = drafts[n] ? summarize(n, drafts[n] as StepValues) : [];
+        const lines = n === 6 ? inventoryLines : drafts[n] ? summarize(n, drafts[n] as StepValues) : [];
         return (
           <Card key={n} style={{ gap: space.xs }}>
             <Text variant="subtitle">{STEPS[n].title}</Text>

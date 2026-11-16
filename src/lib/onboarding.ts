@@ -16,13 +16,7 @@ const goals: Option[] = [
 ];
 const goalIds = ids(goals);
 const environments: Option[] = [
-  { value: 'home', label: 'Casa' }, { value: 'gym', label: 'Gimnasio' }, { value: 'outdoor', label: 'Aire libre' }, { value: 'other', label: 'Otro' },
-];
-const equipment: Option[] = [
-  { value: 'bodyweight', label: 'Solo peso corporal' }, { value: 'dumbbells', label: 'Mancuernas' }, { value: 'barbell', label: 'Barra y discos' },
-  { value: 'kettlebell', label: 'Kettlebell' }, { value: 'bands', label: 'Bandas elásticas' }, { value: 'bench', label: 'Banco' },
-  { value: 'rack', label: 'Rack o soportes' }, { value: 'cables', label: 'Poleas' }, { value: 'machines', label: 'Máquinas guiadas' },
-  { value: 'pullup', label: 'Barra de dominadas' },
+  { value: 'home', label: 'Casa' }, { value: 'gym', label: 'Gimnasio' }, { value: 'outdoor', label: 'Aire libre' }, { value: 'travel', label: 'Viajes' },
 ];
 const jointLimitations: Option[] = [
   { value: 'shoulder', label: 'Hombro' }, { value: 'elbow', label: 'Codo' }, { value: 'wrist', label: 'Muñeca' },
@@ -85,9 +79,9 @@ export const STEPS: Record<number, StepDef> = {
     fields: [{ key: 'environments', label: 'Entornos de entrenamiento', multi: true, options: environments }],
   },
   6: {
-    title: 'Tu equipamiento', intro: 'Marca lo que tienes a mano. Puedes omitirlo; el inventario por entorno llegará más adelante.',
-    schema: z.object({ equipment: z.array(z.enum(ids(equipment))).optional() }),
-    fields: [{ key: 'equipment', label: 'Material disponible (opcional)', multi: true, optional: true, options: equipment }],
+    // Pantalla propia (auditoría de inventario por entorno); aquí solo el título y el esquema vacío.
+    title: 'Tu equipamiento', intro: 'Marca qué tienes y qué no en cada entorno. Lo que no indiques queda «sin indicar».',
+    schema: z.object({}), fields: [],
   },
   7: {
     title: 'Precauciones', intro: 'Indica zonas con molestias para que el plan las tenga en cuenta. No sustituye el consejo médico.',

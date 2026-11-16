@@ -1,5 +1,5 @@
 import { migrate } from '../src/db';
-import { clearInventory, ensureEnvironment, getInventory, markNoEquipment, setItemState } from '../src/db/inventory';
+import { clearInventory, ensureEnvironment, getInventory, inventorySummary, markNoEquipment, setItemState } from '../src/db/inventory';
 import { createProfile, deleteProfile } from '../src/db/profiles';
 import { CATALOG } from '../src/data/equipment';
 import { memoryDb } from '../test-utils/sqlite';
@@ -72,4 +72,17 @@ it('borrar el perfil elimina sus entornos e inventario sin tocar el de otro perf
   await deleteProfile(db, a.id);
   expect(await db.getFirstAsync('SELECT 1 FROM environment_inventory WHERE environment_id = ?', [ea])).toBeNull();
   expect(await getInventory(db, eb)).toEqual({ bench_prone: 'available' });
+});
+
+it('inventorySummary cuenta disponibles y no disponibles por entorno', async () => {
+  const { db, a, b } = await setup();
+  const home = await ensureEnvironment(db, a.id, 'home');
+  await ensureEnvironment(db, a.id, 'gym');
+  await ensureEnvironment(db, b.id, 'home');
+  await setItemState(db, home, 'bench_prone', 'available');
+  await setItemState(db, home, 'pec_deck_fly', 'unavailable');
+  expect(await inventorySummary(db, a.id)).toEqual([
+    { kind: 'home', available: 1, unavailable: 1 },
+    { kind: 'gym', available: 0, unavailable: 0 },
+  ]);
 });
