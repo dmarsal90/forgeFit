@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 type Option = { value: string | number; label: string };
 export type Field = { key: string; label: string; multi?: boolean; optional?: boolean; options: Option[] };
-export type StepDef = { title: string; intro: string; fields: Field[]; schema: z.ZodType };
+export type Consent = { kind: string; version: number; label: string; hint: string };
+export type StepDef = { title: string; intro: string; fields: Field[]; schema: z.ZodType; consent?: Consent };
+
+const ids = (o: Option[]) => o.map((x) => x.value) as [string, ...string[]];
 
 const goals: Option[] = [
   { value: 'strength', label: 'Ganar fuerza' },
@@ -11,7 +14,20 @@ const goals: Option[] = [
   { value: 'general', label: 'Estar en forma' },
   { value: 'mobility', label: 'Movilidad y salud articular' },
 ];
-const goalIds = goals.map((g) => g.value) as [string, ...string[]];
+const goalIds = ids(goals);
+const environments: Option[] = [
+  { value: 'home', label: 'Casa' }, { value: 'gym', label: 'Gimnasio' }, { value: 'outdoor', label: 'Aire libre' }, { value: 'other', label: 'Otro' },
+];
+const equipment: Option[] = [
+  { value: 'bodyweight', label: 'Solo peso corporal' }, { value: 'dumbbells', label: 'Mancuernas' }, { value: 'barbell', label: 'Barra y discos' },
+  { value: 'kettlebell', label: 'Kettlebell' }, { value: 'bands', label: 'Bandas elásticas' }, { value: 'bench', label: 'Banco' },
+  { value: 'rack', label: 'Rack o soportes' }, { value: 'cables', label: 'Poleas' }, { value: 'machines', label: 'Máquinas guiadas' },
+  { value: 'pullup', label: 'Barra de dominadas' },
+];
+const limitations: Option[] = [
+  { value: 'shoulders', label: 'Hombros' }, { value: 'neck', label: 'Cuello' }, { value: 'lower_back', label: 'Espalda baja' },
+  { value: 'wrists', label: 'Muñecas' }, { value: 'hips', label: 'Caderas' }, { value: 'knees', label: 'Rodillas' }, { value: 'ankles', label: 'Tobillos' },
+];
 const week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z
@@ -28,7 +44,7 @@ const availabilitySchema = z.object({
   minutes: z.number().int().min(15, 'Mínimo 15 minutos').max(180, 'Máximo 180 minutos'),
 });
 
-// Etapas 2–4. Las etapas 1 (perfil) y 5–8 viven fuera de este mapa.
+// Etapas 2–7. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
 export const STEPS: Record<number, StepDef> = {
   2: {
     title: 'Tus objetivos', intro: 'Elige uno principal. Los secundarios son opcionales.', schema: goalsSchema,
@@ -55,9 +71,28 @@ export const STEPS: Record<number, StepDef> = {
       { key: 'minutes', label: 'Minutos por sesión', options: [30, 45, 60, 90].map((m) => ({ value: m, label: `${m} min` })) },
     ],
   },
+  5: {
+    title: 'Tus entornos', intro: 'Dónde entrenas. Puedes elegir varios.',
+    schema: z.object({ environments: z.array(z.enum(ids(environments))).min(1, 'Elige al menos un entorno') }),
+    fields: [{ key: 'environments', label: 'Entornos de entrenamiento', multi: true, options: environments }],
+  },
+  6: {
+    title: 'Tu equipamiento', intro: 'Marca lo que tienes a mano. Puedes omitirlo; el inventario por entorno llegará más adelante.',
+    schema: z.object({ equipment: z.array(z.enum(ids(equipment))).optional() }),
+    fields: [{ key: 'equipment', label: 'Material disponible (opcional)', multi: true, optional: true, options: equipment }],
+  },
+  7: {
+    title: 'Precauciones', intro: 'Indica zonas con molestias para que el plan las tenga en cuenta. No sustituye el consejo médico.',
+    schema: z.object({ limitations: z.array(z.enum(ids(limitations))).optional() }),
+    fields: [{ key: 'limitations', label: 'Zonas con molestias o lesión (opcional)', multi: true, optional: true, options: limitations }],
+    consent: {
+      kind: 'ai_plan', version: 1, label: 'Permitir proponer mi plan con IA',
+      hint: 'Opcional y desactivado por defecto. Aún no se envía nada; antes de usarlo te volveremos a avisar. Puedes revocarlo cuando quieras.',
+    },
+  },
 };
 
-export const LAST_STEP = 4; // shortcut: las etapas 5–8 llegan en la fase 2c; subir al añadirlas
+export const LAST_STEP = 8;
 
 export type StepValues = Record<string, string | number | (string | number)[] | undefined>;
 
@@ -68,4 +103,14 @@ export function validateStep(step: number, values: StepValues) {
   const errors: Record<string, string> = {};
   for (const i of r.error.issues) errors[String(i.path[0])] ??= i.message;
   return { data: null, errors };
+}
+
+/** Líneas «Campo: valores» de una etapa, para la revisión. */
+export function summarize(step: number, values: StepValues): string[] {
+  return STEPS[step].fields.flatMap((f) => {
+    const raw = values[f.key];
+    const picked = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]);
+    const labels = picked.map((v) => f.options.find((o) => o.value === v)?.label).filter(Boolean);
+    return labels.length ? [`${f.label.replace(/ \(.*\)$/, '')}: ${labels.join(', ')}`] : [];
+  });
 }
