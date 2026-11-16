@@ -52,11 +52,11 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
 }
 
 /** Selección con acento + check; el estado nunca se comunica solo con color. */
-export function Choice({ label, hint, selected, onPress }: { label: string; hint?: string; selected: boolean; onPress: () => void }) {
+export function Choice({ label, hint, selected, onPress, multi }: { label: string; hint?: string; selected: boolean; onPress: () => void; multi?: boolean }) {
   return (
     <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
+      accessibilityRole={multi ? 'checkbox' : 'radio'}
+      accessibilityState={multi ? { checked: selected } : { selected }}
       onPress={onPress}
       style={[s.card, s.choice, selected && { borderColor: colors.accent, borderWidth: 1.5 }]}
     >
