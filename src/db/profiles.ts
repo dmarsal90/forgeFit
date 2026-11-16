@@ -35,3 +35,36 @@ export async function countProfiles(db: Db): Promise<number> {
   const r = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM profiles WHERE archived_at IS NULL');
   return r?.n ?? 0;
 }
+
+export async function listProfiles(db: Db): Promise<Profile[]> {
+  const rows = await db.getAllAsync<Row>(
+    'SELECT id, alias, anatomical_model FROM profiles WHERE archived_at IS NULL ORDER BY rowid',
+  );
+  return rows.map(toProfile);
+}
+
+export async function setActiveProfile(db: Db, id: string): Promise<boolean> {
+  const exists = await db.getFirstAsync('SELECT 1 FROM profiles WHERE id = ? AND archived_at IS NULL', [id]);
+  if (!exists) return false;
+  await db.runAsync("INSERT OR REPLACE INTO app_state (key, value) VALUES ('active_profile_id', ?)", [id]);
+  return true;
+}
+
+const clearActiveIf = (db: Db, id: string) =>
+  db.runAsync("DELETE FROM app_state WHERE key = 'active_profile_id' AND value = ?", [id]);
+
+/** Archivar conserva los datos; deja de listarse y deja de ser el perfil activo. */
+export async function archiveProfile(db: Db, id: string) {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync('UPDATE profiles SET archived_at = ?, updated_at = ? WHERE id = ?', [new Date().toISOString(), new Date().toISOString(), id]);
+    await clearActiveIf(tx, id);
+  });
+}
+
+/** Borra el perfil y, por ON DELETE CASCADE, todo lo que cuelga de él. */
+export async function deleteProfile(db: Db, id: string) {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await clearActiveIf(tx, id);
+    await tx.runAsync('DELETE FROM profiles WHERE id = ?', [id]);
+  });
+}
