@@ -32,6 +32,7 @@ const muscleLimitations: Option[] = [
 ];
 export const JOINT_IDS = ids(jointLimitations);
 export const MUSCLE_IDS = ids(muscleLimitations);
+export const LIMITATION_LABEL: Record<string, string> = Object.fromEntries([...jointLimitations, ...muscleLimitations].map((x) => [x.value, x.label.toLowerCase()]));
 const week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z

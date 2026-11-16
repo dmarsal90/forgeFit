@@ -1,5 +1,6 @@
 import { EXERCISES, type Exercise, type Level, type Variant } from '../data/exercises';
 import { meets } from './exercises';
+import { LIMITATION_LABEL } from './onboarding';
 import { planSchema, type Plan, type PlanSession } from './plan';
 
 export type PlanContext = {
@@ -16,11 +17,12 @@ const byVariant = new Map<string, { ex: Exercise; variant: Variant }>(
   EXERCISES.flatMap((ex) => ex.variants.map((variant) => [variant.id, { ex, variant }] as const)),
 );
 
+const label = (ids: string[]) => ids.map((i) => LIMITATION_LABEL[i] ?? i).join(', ');
 const WARMUP_MIN = 5;
 const WORK_SECONDS_PER_SET = 40;
 // Series semanales efectivas por músculo (principal = 1, secundario = 0,5). Conservador a propósito.
 const WEEKLY_SET_LIMIT: Record<Level, number> = { 1: 12, 2: 18, 3: 22 };
-const MIN_REPS: Record<Level, number> = { 1: 5, 2: 3, 3: 1 }; // sin repeticiones máximas para quien empieza
+export const MIN_REPS: Record<Level, number> = { 1: 5, 2: 3, 3: 1 }; // sin repeticiones máximas para quien empieza
 const MAX_SETS_PER_EXERCISE = 6;
 
 /** Duración estimada de una sesión en minutos (calentamiento incluido). */
@@ -67,11 +69,13 @@ export function validatePlan(input: unknown, ctx: PlanContext): Validation {
       if (!meets(variant.requires, ctx.have)) add('error', 'equipment_unavailable', ip, `${ex.es} (${variant.es}) necesita equipo que no has confirmado`);
 
       const jointHit = ex.stress.filter((j) => ctx.limitations.joints.includes(j));
-      if (jointHit.length) add('error', 'injury_joint', ip, `${ex.es} carga una articulación con molestias (${jointHit.join(', ')})`);
+      if (jointHit.length) add('error', 'injury_joint', ip, `${ex.es} carga una articulación con molestias (${label(jointHit)})`);
+      const involvedHit = (ex.involves ?? []).filter((j) => ctx.limitations.joints.includes(j));
+      if (involvedHit.length) add('warning', 'injury_involved', ip, `${ex.es} implica ${label(involvedHit)}, que indicaste con molestias; si molesta, sustitúyelo`);
       const primaryHit = ex.primary.filter((m) => ctx.limitations.muscles.includes(m));
-      if (primaryHit.length) add('error', 'injury_muscle', ip, `${ex.es} trabaja un músculo con molestias (${primaryHit.join(', ')})`);
+      if (primaryHit.length) add('error', 'injury_muscle', ip, `${ex.es} trabaja un músculo con molestias (${label(primaryHit)})`);
       const secondaryHit = ex.secondary.filter((m) => ctx.limitations.muscles.includes(m));
-      if (secondaryHit.length) add('warning', 'injury_secondary', ip, `${ex.es} implica de forma secundaria un músculo con molestias (${secondaryHit.join(', ')})`);
+      if (secondaryHit.length) add('warning', 'injury_secondary', ip, `${ex.es} implica de forma secundaria un músculo con molestias (${label(secondaryHit)})`);
 
       if (ex.level > ctx.level + 1) add('error', 'level_too_high', ip, `${ex.es} es demasiado avanzado para tu nivel`);
       else if (ex.level > ctx.level) add('warning', 'level_stretch', ip, `${ex.es} está por encima de tu nivel; empieza con poca carga`);

@@ -12,6 +12,7 @@ export type Variant = { id: string; es: string; requires: Req };
 export type Exercise = {
   id: string; es: string; en: string; pattern: Pattern;
   primary: string[]; secondary: string[]; level: Level; stress: string[]; variants: Variant[];
+  involves?: string[]; // articulaciones que participan pero no son la carga principal: aviso, no exclusión
 };
 
 const all = (...r: Req[]): Req => ({ all: r });
@@ -54,7 +55,7 @@ const E = (
   level: Level, stress: string[], variants: V[],
 ): Exercise => ({ id, es, en, pattern, primary, secondary, level, stress, variants: variants.map(([vid, ves, requires]) => ({ id: `${id}.${vid}`, es: ves, requires })) });
 
-export const EXERCISES: Exercise[] = [
+const RAW: Exercise[] = [
   // ── Pecho
   E('bench_press', 'Press de banca plano', 'Flat bench press', 'push_horizontal', ['pectoral'], ['triceps', 'deltoid'], 2, ['shoulder', 'elbow', 'wrist'], [
     ['barbell', 'Con barra', all(LOADED_BAR, PRESS_FLAT)], ['smith', 'En Smith', all(SMITH, FLAT)],
@@ -430,3 +431,12 @@ export const EXERCISES: Exercise[] = [
     ['kb', 'Con kettlebell', KB], ['db', 'Con mancuerna', DB],
   ]),
 ];
+
+// En estos ejercicios el codo solo participa (los músculos que lo mueven son secundarios): con molestias
+// de codo no se excluyen, se avisa y el motor prefiere alternativas que no lo impliquen.
+const ELBOW_INVOLVED = new Set([
+  'bench_press', 'db_bench_press', 'incline_bench_press', 'decline_bench_press', 'pullup', 'chinup', 'neutral_pullup', 'lat_pulldown',
+  'barbell_row', 'db_row', 'chest_supported_db_row', 'seated_cable_row', 'machine_row', 'inverted_row', 'overhead_press', 'db_shoulder_press',
+]);
+export const EXERCISES: Exercise[] = RAW.map((e) =>
+  ELBOW_INVOLVED.has(e.id) ? { ...e, stress: e.stress.filter((j) => j !== 'elbow'), involves: ['elbow'] } : e);
