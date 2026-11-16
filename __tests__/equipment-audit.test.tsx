@@ -39,3 +39,34 @@ it('busca un banco prone, lo marca como disponible y lo guarda solo en ese entor
   await waitFor(async () => expect(await getInventory(db, home)).toEqual({ bench_prone: 'available' }));
   expect(await getInventory(db, gym)).toEqual({});
 });
+
+it('los grupos nacen plegados, se despliegan al tocarlos y la búsqueda los despliega sola', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['gym'] });
+  mockApp = { db, profile: a };
+  await render(<EquipmentAudit profileId={a.id} onNext={noop} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
+
+  const chest = await screen.findByLabelText(/^Pecho,/);
+  expect(screen.queryByText('Banco plano fijo')).toBeNull();
+  await fireEvent.press(chest);
+  expect(await screen.findByText('Banco plano fijo')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText(/^Pecho,/));
+  expect(screen.queryByText('Banco plano fijo')).toBeNull();
+
+  await fireEvent.changeText(screen.getByLabelText('Buscar equipo'), 'hack squat');
+  expect((await screen.findAllByText(/Hack squat/)).length).toBeGreaterThan(0);
+});
+
+it('Continuar está arriba, sin necesidad de bajar por la lista', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['gym'] });
+  mockApp = { db, profile: a };
+  const onNext = jest.fn();
+  await render(<EquipmentAudit profileId={a.id} onNext={onNext} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
+  await fireEvent.press((await screen.findAllByText('Continuar'))[0]);
+  expect(onNext).toHaveBeenCalledTimes(1);
+});

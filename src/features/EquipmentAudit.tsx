@@ -8,7 +8,7 @@ import { Button, Card, Field, Screen, Text } from '../ui/components';
 import { colors, MIN_TOUCH, radius, space } from '../ui/tokens';
 import { useApp } from './AppContext';
 
-type Row = { key: string; header: string } | { key: string; item: CatalogItem };
+type Row = { key: string; group: { id: string; label: string; marked: number; total: number; expanded: boolean } } | { key: string; item: CatalogItem };
 const KINDS = Object.keys(ENV_LABELS) as EnvKind[];
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
@@ -61,6 +61,27 @@ const ItemRow = memo(function ItemRow({ item, state, onSet }: {
   );
 });
 
+const FAMILY_TOTAL = Object.fromEntries(FAMILIES.map((f) => [f.id, CATALOG.filter((i) => i.family === f.id).length]));
+
+const GroupHeader = memo(function GroupHeader({ id, label, marked, total, expanded, onToggle }: {
+  id: string; label: string; marked: number; total: number; expanded: boolean; onToggle: (id: string) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`${label}, ${marked} de ${total} indicados`}
+      onPress={() => onToggle(id)}
+      style={{
+        minHeight: MIN_TOUCH, flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm,
+        paddingHorizontal: space.lg, borderRadius: radius.card, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+      }}
+    >
+      <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={20} color={colors.accent} />
+      <Text variant="subtitle" style={{ flex: 1 }}>{label}</Text>
+      <Text variant="caption" muted>{marked} de {total}</Text>
+    </Pressable>
+  );
+});
+
 export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnvironments }: {
   profileId: string; onNext: () => void; onExit: () => void; onBack: () => void; onPickEnvironments: () => void;
 }) {
@@ -70,7 +91,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
   const [envId, setEnvId] = useState<string | null>(null);
   const [inventory, setInventory] = useState<Record<string, ItemState>>({});
   const [query, setQuery] = useState('');
-  const [family, setFamily] = useState<string | null>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,6 +122,8 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
     }
   }, [db, envId]);
 
+  const toggleGroup = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: !o[id] })), []);
+
   async function noEquipment() {
     if (!envId) return;
     try { await markNoEquipment(db, envId); setInventory(await getInventory(db, envId)); setError(null); } catch { setError('No se pudo guardar el cambio.'); }
@@ -108,13 +131,17 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    let last = '';
-    for (const item of searchCatalog(query, family)) {
-      if (item.family !== last) { last = item.family; out.push({ key: `h_${last}`, header: FAMILIES.find((f) => f.id === last)?.label ?? last }); }
-      out.push({ key: item.id, item });
+    const searching = query.trim() !== '';
+    for (const f of FAMILIES) {
+      const items = searchCatalog(query, f.id);
+      if (!items.length) continue;
+      const expanded = searching || !!open[f.id]; // al buscar se despliegan los grupos con resultados
+      const marked = CATALOG.reduce((n, i) => n + (i.family === f.id && inventory[i.id] ? 1 : 0), 0);
+      out.push({ key: `g_${f.id}`, group: { id: f.id, label: f.label, marked, total: FAMILY_TOTAL[f.id], expanded } });
+      if (expanded) for (const item of items) out.push({ key: item.id, item });
     }
     return out;
-  }, [query, family]);
+  }, [query, open, inventory]);
 
   const counts = useMemo(() => {
     const v = Object.values(inventory);
@@ -134,9 +161,6 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   const header = (
     <View style={{ gap: space.md, paddingBottom: space.md }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={onBack} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
-        <Text muted>← Volver</Text>
-      </Pressable>
       <Text variant="caption" muted>Etapa 6 de 8</Text>
       <Text variant="title">Tu equipamiento</Text>
       <Text muted>Marca qué tienes y qué no en cada entorno. Lo que no indiques queda «sin indicar»; nunca damos nada por supuesto.</Text>
@@ -144,10 +168,6 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         {(kinds ?? []).map((k) => <Chip key={k} label={ENV_LABELS[k]} selected={k === kind} onPress={() => setKind(k)} />)}
       </ScrollView>
       <Field label="Buscar equipo" value={query} onChangeText={setQuery} placeholder="Ej.: banco prone, hack squat, polea" autoCorrect={false} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-        <Chip label="Todos" selected={family === null} onPress={() => setFamily(null)} />
-        {FAMILIES.map((f) => <Chip key={f.id} label={f.label} selected={family === f.id} onPress={() => setFamily(family === f.id ? null : f.id)} />)}
-      </ScrollView>
       <Text variant="caption" muted>✓ Tengo · ✕ No tengo · sin marcar = sin indicar</Text>
       <Text variant="caption" muted accessibilityLiveRegion="polite">
         {counts.yes} disponibles · {counts.no} no disponibles · {CATALOG.length - counts.yes - counts.no} sin indicar
@@ -159,6 +179,12 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   return (
     <Screen scroll={false}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: space.sm }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={onBack} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
+          <Text muted>← Volver</Text>
+        </Pressable>
+        <Button label="Continuar" icon="arrow-forward" onPress={onNext} />
+      </View>
       <FlatList
         style={{ flex: 1 }}
         data={rows}
@@ -170,8 +196,8 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         initialNumToRender={14}
         windowSize={7}
         maxToRenderPerBatch={14}
-        renderItem={({ item: r }) => 'header' in r ? (
-          <Text variant="subtitle" style={{ paddingTop: space.lg, paddingBottom: space.sm }} accessibilityRole="header">{r.header}</Text>
+        renderItem={({ item: r }) => 'group' in r ? (
+          <GroupHeader {...r.group} onToggle={toggleGroup} />
         ) : (
           <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} />
         )}

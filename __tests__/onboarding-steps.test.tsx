@@ -101,12 +101,13 @@ it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «
   mockReplace.mockClear();
   await render(<OnboardingStep />);
 
+  await fireEvent.press(await screen.findByLabelText(/^Pecho,/)); // los grupos nacen plegados
   await fireEvent.press(await screen.findByLabelText('Tengo: Banco plano fijo'));
   await fireEvent.press(screen.getByText('Guardar y salir'));
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
   expect((await getDrafts(db, a.id))[6]).toEqual({});
 
   mockReplace.mockClear();
-  await fireEvent.press(screen.getByText('Continuar'));
+  await fireEvent.press(screen.getAllByText('Continuar')[0]); // el de arriba, sin hacer scroll
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/7'));
 });
