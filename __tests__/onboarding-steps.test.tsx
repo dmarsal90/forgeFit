@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { migrate } from '../src/db';
-import { getDrafts, hasConsent } from '../src/db/onboarding';
+import { getDrafts, hasConsent, saveDraft } from '../src/db/onboarding';
 import { createProfile } from '../src/db/profiles';
-import { summarize, validateStep } from '../src/lib/onboarding';
+import { onboardingProgress, summarize, validateStep } from '../src/lib/onboarding';
 import OnboardingStep from '../src/app/onboarding/[step]';
 import { memoryDb } from '../test-utils/sqlite';
 
@@ -55,7 +55,8 @@ describe('etapas 5–7 y resumen', () => {
     expect(validateStep(5, { environments: ['home'] }).data).not.toBeNull();
     expect(validateStep(5, { environments: ['mars'] }).data).toBeNull();
     expect(validateStep(6, {}).data).not.toBeNull();
-    expect(validateStep(7, { limitations: ['knees'] }).data).not.toBeNull();
+    expect(validateStep(7, { jointLimitations: ['elbow'], muscleLimitations: ['hamstrings'] }).data).not.toBeNull();
+    expect(validateStep(7, { jointLimitations: ['hamstrings'] }).data).toBeNull(); // un músculo no es una articulación
   });
   it('summarize muestra etiquetas legibles y omite lo vacío', () => {
     expect(summarize(4, { days: [0, 2], minutes: 45 })).toEqual(['Días en que puedes entrenar: Lunes, Miércoles', 'Minutos por sesión: 45 min']);
@@ -82,4 +83,31 @@ it('el consentimiento de IA nace desactivado y solo se registra si se marca; se 
   await fireEvent.press(screen.getByText('Permitir proponer mi plan con IA'));
   await fireEvent.press(screen.getByText('Guardar y salir'));
   await waitFor(async () => expect(await hasConsent(db, a.id, 'ai_plan')).toBe(false));
+});
+
+it('onboardingProgress cuenta las etapas guardadas y propone la primera pendiente', () => {
+  expect(onboardingProgress({})).toEqual({ done: 0, total: 6, next: 2 });
+  expect(onboardingProgress({ 2: {}, 3: {}, 5: {} })).toEqual({ done: 3, total: 6, next: 4 });
+  expect(onboardingProgress({ 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {} })).toEqual({ done: 6, total: 6, next: 8 });
+});
+
+it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «Continuar» pasa a la 7', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['gym'] });
+  mockApp = { db, profile: a };
+  mockStep = '6';
+  mockReplace.mockClear();
+  await render(<OnboardingStep />);
+
+  await fireEvent.press(await screen.findByLabelText(/^Pecho,/)); // los grupos nacen plegados
+  await fireEvent.press(await screen.findByLabelText('Tengo: Banco plano fijo'));
+  await fireEvent.press(screen.getByText('Guardar y salir'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
+  expect((await getDrafts(db, a.id))[6]).toEqual({});
+
+  mockReplace.mockClear();
+  await fireEvent.press(screen.getByText('Continuar'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/7'));
 });

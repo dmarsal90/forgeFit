@@ -6,10 +6,15 @@ export type Profile = { id: string; alias: string; anatomicalModel: 'male' | 'fe
 type Row = { id: string; alias: string; anatomical_model: 'male' | 'female' | null };
 const toProfile = (r: Row): Profile => ({ id: r.id, alias: r.alias, anatomicalModel: r.anatomical_model });
 
-const uuid = () => globalThis.crypto.randomUUID();
+// Hermes no expone globalThis.crypto: el id aleatorio (128 bits) lo genera SQLite.
+async function newId(db: Db): Promise<string> {
+  const r = await db.getFirstAsync<{ id: string }>('SELECT lower(hex(randomblob(16))) AS id');
+  if (!r) throw new Error('No se pudo generar el id');
+  return r.id;
+}
 
 export async function createProfile(db: Db, input: ProfileInput): Promise<Profile> {
-  const id = uuid();
+  const id = await newId(db);
   const now = new Date().toISOString();
   const birthYear = input.age ? new Date().getFullYear() - input.age : null;
   await db.withExclusiveTransactionAsync(async (tx) => {
