@@ -1,0 +1,14 @@
+{
+  "brand": "ForgeFit",
+  "version": "1.0",
+  "palette": {
+    "background": "#202326",
+    "surface": "#2B3138",
+    "accent": "#B8F36B",
+    "text": "#F5F7FA",
+    "textSecondary": "#B5B9C1"
+  },
+  "fontFamily": "Inter (recommended; not bundled)",
+  "iconStyle": "premium contour",
+  "notes": "Do not bake glow into Android adaptive foreground. Check contrast for all text and interactive states."
+}
