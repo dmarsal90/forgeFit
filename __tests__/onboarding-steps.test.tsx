@@ -55,7 +55,8 @@ describe('etapas 5–7 y resumen', () => {
     expect(validateStep(5, { environments: ['home'] }).data).not.toBeNull();
     expect(validateStep(5, { environments: ['mars'] }).data).toBeNull();
     expect(validateStep(6, {}).data).not.toBeNull();
-    expect(validateStep(7, { limitations: ['knees'] }).data).not.toBeNull();
+    expect(validateStep(7, { jointLimitations: ['elbow'], muscleLimitations: ['hamstrings'] }).data).not.toBeNull();
+    expect(validateStep(7, { jointLimitations: ['hamstrings'] }).data).toBeNull(); // un músculo no es una articulación
   });
   it('summarize muestra etiquetas legibles y omite lo vacío', () => {
     expect(summarize(4, { days: [0, 2], minutes: 45 })).toEqual(['Días en que puedes entrenar: Lunes, Miércoles', 'Minutos por sesión: 45 min']);

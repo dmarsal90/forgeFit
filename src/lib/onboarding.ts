@@ -24,9 +24,17 @@ const equipment: Option[] = [
   { value: 'rack', label: 'Rack o soportes' }, { value: 'cables', label: 'Poleas' }, { value: 'machines', label: 'Máquinas guiadas' },
   { value: 'pullup', label: 'Barra de dominadas' },
 ];
-const limitations: Option[] = [
-  { value: 'shoulders', label: 'Hombros' }, { value: 'neck', label: 'Cuello' }, { value: 'lower_back', label: 'Espalda baja' },
-  { value: 'wrists', label: 'Muñecas' }, { value: 'hips', label: 'Caderas' }, { value: 'knees', label: 'Rodillas' }, { value: 'ankles', label: 'Tobillos' },
+const jointLimitations: Option[] = [
+  { value: 'shoulder', label: 'Hombro' }, { value: 'elbow', label: 'Codo' }, { value: 'wrist', label: 'Muñeca' },
+  { value: 'hip', label: 'Cadera' }, { value: 'knee', label: 'Rodilla' }, { value: 'ankle', label: 'Tobillo' },
+  { value: 'neck', label: 'Cuello' }, { value: 'lumbar_spine', label: 'Columna lumbar' }, { value: 'thoracic_spine', label: 'Columna dorsal' },
+];
+const muscleLimitations: Option[] = [
+  { value: 'pectoral', label: 'Pectoral' }, { value: 'lats_upper_back', label: 'Dorsal y espalda alta' }, { value: 'trapezius', label: 'Trapecio' },
+  { value: 'deltoid', label: 'Deltoides' }, { value: 'biceps', label: 'Bíceps' }, { value: 'triceps', label: 'Tríceps' },
+  { value: 'forearm', label: 'Antebrazo' }, { value: 'core', label: 'Abdomen y core' }, { value: 'lumbar_muscles', label: 'Musculatura lumbar' },
+  { value: 'glutes', label: 'Glúteos' }, { value: 'adductors', label: 'Aductores' }, { value: 'hamstrings', label: 'Isquiotibiales' },
+  { value: 'quadriceps', label: 'Cuádriceps' }, { value: 'calves', label: 'Gemelos y sóleo' }, { value: 'hip_flexors', label: 'Flexores de cadera' },
 ];
 const week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -83,8 +91,14 @@ export const STEPS: Record<number, StepDef> = {
   },
   7: {
     title: 'Precauciones', intro: 'Indica zonas con molestias para que el plan las tenga en cuenta. No sustituye el consejo médico.',
-    schema: z.object({ limitations: z.array(z.enum(ids(limitations))).optional() }),
-    fields: [{ key: 'limitations', label: 'Zonas con molestias o lesión (opcional)', multi: true, optional: true, options: limitations }],
+    schema: z.object({
+      jointLimitations: z.array(z.enum(ids(jointLimitations))).optional(),
+      muscleLimitations: z.array(z.enum(ids(muscleLimitations))).optional(),
+    }),
+    fields: [
+      { key: 'jointLimitations', label: 'Articulaciones con molestias o lesión (opcional)', multi: true, optional: true, options: jointLimitations },
+      { key: 'muscleLimitations', label: 'Músculos con molestias o lesión (opcional)', multi: true, optional: true, options: muscleLimitations },
+    ],
     consent: {
       kind: 'ai_plan', version: 1, label: 'Permitir proponer mi plan con IA',
       hint: 'Opcional y desactivado por defecto. Aún no se envía nada; antes de usarlo te volveremos a avisar. Puedes revocarlo cuando quieras.',
