@@ -41,3 +41,8 @@ example
 # generated native folders
 /ios
 /android
+
+# material de referencia (solo local)
+/docs/
+/design/
+/brand/
