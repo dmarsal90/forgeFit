@@ -16,7 +16,8 @@ export function Text({ variant = 'body', muted, style, ...props }: React.Compone
 export function Screen({ children, scroll = true, style, tab }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle>; tab?: boolean }) {
   const insets = useSafeAreaInsets();
   // El área se recorta a la zona segura: nada se dibuja bajo la barra de estado ni la de navegación.
-  const frame = { paddingTop: insets.top, paddingBottom: tab ? 0 : insets.bottom };
+  // shortcut: con edge-to-edge el inset inferior llega a 0 en algunos Android y la barra de navegación tapa el último botón; mínimo 48 dp. Revisar si se ajusta el inset de la ventana.
+  const frame = { paddingTop: insets.top, paddingBottom: tab ? 0 : Math.max(insets.bottom, 48) };
   if (!scroll) return <View style={[s.screen, frame, { padding: space.lg }, style]}>{children}</View>;
   // Con edge-to-edge Android no redimensiona solo: sin el padding el teclado tapa los botones.
   return (
