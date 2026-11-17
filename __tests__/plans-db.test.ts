@@ -1,7 +1,7 @@
 import { migrate } from '../src/db';
-import { getActivePlan, saveActivePlan } from '../src/db/plans';
+import { getActivePlan, saveActivePlan, updateActivePlan } from '../src/db/plans';
 import { createProfile, deleteProfile } from '../src/db/profiles';
-import { nextSession, type Plan } from '../src/lib/plan';
+import { moveSession, nextSession, type Plan } from '../src/lib/plan';
 import { memoryDb } from '../test-utils/sqlite';
 
 const plan = (name = 'Empuje', days = [0, 2, 4]): Plan => ({
@@ -54,4 +54,27 @@ it('nextSession: hoy si toca, si no la siguiente y, pasado el último día, la p
   expect(nextSession(p, 2)).toMatchObject({ isToday: true, session: { day: 2 } });
   expect(nextSession(p, 3)).toMatchObject({ isToday: false, session: { day: 4 } });
   expect(nextSession(p, 6)).toMatchObject({ isToday: false, session: { day: 0 } });
+});
+
+it('moveSession: mueve a un día libre, intercambia con uno ocupado y nunca duplica días', () => {
+  const p = plan('X', [0, 2, 4]);
+  p.sessions[0].name = 'A'; p.sessions[1].name = 'B'; p.sessions[2].name = 'C';
+  const free = moveSession(p, 0, 1);
+  expect(free.sessions.map((s) => [s.day, s.name])).toEqual([[1, 'A'], [2, 'B'], [4, 'C']]);
+  const swap = moveSession(p, 0, 2);
+  expect(swap.sessions.map((s) => [s.day, s.name])).toEqual([[0, 'B'], [2, 'A'], [4, 'C']]);
+  expect(new Set(swap.sessions.map((s) => s.day)).size).toBe(3);
+  expect(moveSession(p, 2, 2)).toBe(p);
+  expect(() => moveSession(p, 1, 3)).toThrow(); // no hay sesión el martes
+  expect(() => moveSession(p, 0, 9)).toThrow();
+  expect(p.sessions.map((s) => s.day)).toEqual([0, 2, 4]); // no muta el original
+});
+
+it('updateActivePlan reescribe el plan activo sin crear otro y rechaza planes inválidos', async () => {
+  const { db, a } = await setup();
+  await saveActivePlan(db, a.id, plan('Antes'), null);
+  await updateActivePlan(db, a.id, moveSession(plan('Antes'), 0, 1));
+  expect((await getActivePlan(db, a.id))?.sessions.map((s) => s.day)).toEqual([1, 2, 4]);
+  expect((await db.getAllAsync('SELECT 1 FROM training_plans WHERE profile_id = ?', [a.id])).length).toBe(1);
+  await expect(updateActivePlan(db, a.id, { ...plan(), sessions: [] } as Plan)).rejects.toThrow();
 });

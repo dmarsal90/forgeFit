@@ -26,3 +26,9 @@ export async function getActivePlan(db: Db, profileId: string): Promise<Plan | n
     return parsed.success ? parsed.data : null;
   } catch { return null; }
 }
+
+/** Reemplaza el contenido del plan activo (p. ej. tras mover días), validándolo antes de escribir. */
+export async function updateActivePlan(db: Db, profileId: string, plan: Plan) {
+  const valid = planSchema.parse(plan);
+  await db.runAsync("UPDATE training_plans SET plan_json = ? WHERE profile_id = ? AND status = 'active'", [JSON.stringify(valid), profileId]);
+}

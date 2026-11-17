@@ -1,22 +1,16 @@
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router } from 'expo-router';
 import { View } from 'react-native';
-import { getActivePlan } from '../../db/plans';
 import { useApp } from '../../features/AppContext';
 import { PlanView } from '../../features/PlanView';
+import { usePlanEditor } from '../../features/usePlanEditor';
 import { WEEKDAYS } from '../../lib/onboarding';
-import { todayIndex, type Plan } from '../../lib/plan';
+import { todayIndex } from '../../lib/plan';
 import { Button, Card, EmptyState, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 export default function RoutinesScreen() {
-  const { db, profile } = useApp();
-  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
-
-  useFocusEffect(useCallback(() => {
-    if (!profile) return;
-    getActivePlan(db, profile.id).then(setPlan).catch(() => setPlan(null));
-  }, [db, profile]));
+  const { profile } = useApp();
+  const { plan, allowedDays, move, error } = usePlanEditor();
 
   const today = todayIndex();
   return (
@@ -41,7 +35,8 @@ export default function RoutinesScreen() {
             })}
             <Text variant="caption" muted>Los días de descanso son parte del plan y no rompen tu racha.</Text>
           </Card>
-          <PlanView plan={plan} />
+          {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
+          <PlanView plan={plan} onMove={move} allowedDays={allowedDays} />
           <Button variant="secondary" label="Rehacer plan" onPress={() => router.push('/plan/proposal')} />
         </>
       )}
