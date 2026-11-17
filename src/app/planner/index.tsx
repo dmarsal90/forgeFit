@@ -84,19 +84,7 @@ export default function Planner() {
         <Text muted>Organiza y reordena tus entrenamientos. Mantén pulsado y arrastra, o toca un día para ver las acciones.</Text>
         {plan === undefined ? <Text muted>Cargando…</Text> : plan === null ? <Text muted>Aún no tienes un plan guardado.</Text> : (
           <>
-            <View>
-              {DAYS.map((d) => (
-                <PlannerRow
-                  key={d} day={d} session={plan.sessions.find((s) => s.day === d)} today={d === today}
-                  selected={selected === d} dragOffset={drag && drag.from === d ? drag.y : null} hint={hintFor(d)}
-                  onSelect={() => { setPending(null); setAction(null); setDone(false); setSelected(selected === d ? null : d); }}
-                  onDragStart={() => { setSelected(null); setAction(null); setPending(null); setDone(false); setDrag({ from: d, y: 0 }); }}
-                  onDragMove={(y) => setDrag((cur) => (cur ? { ...cur, y } : cur))}
-                  onDragEnd={(y) => onDragEnd(d, y)}
-                />
-              ))}
-            </View>
-
+            {/* Confirmaciones y acciones arriba: así siempre están a la vista, sin bajar por la lista. */}
             {selected !== null && !pending ? (
               <Card style={{ gap: space.sm }}>
                 <Text variant="subtitle">{WEEKDAYS[selected]}{sel ? ` · ${sel.name}` : ' · descanso'}</Text>
@@ -137,6 +125,19 @@ export default function Planner() {
                 <Button variant="secondary" label="Deshacer" icon="arrow-undo" onPress={async () => { await undo(); setDone(false); }} />
               </Card>
             ) : null}
+            <View>
+              {DAYS.map((d) => (
+                <PlannerRow
+                  key={d} day={d} session={plan.sessions.find((s) => s.day === d)} today={d === today}
+                  selected={selected === d} dragOffset={drag && drag.from === d ? drag.y : null} hint={hintFor(d)}
+                  onSelect={() => { setPending(null); setAction(null); setDone(false); setSelected(selected === d ? null : d); }}
+                  onDragStart={() => { setSelected(null); setAction(null); setPending(null); setDone(false); setDrag({ from: d, y: 0 }); }}
+                  onDragMove={(y) => setDrag((cur) => (cur ? { ...cur, y } : cur))}
+                  onDragEnd={(y) => onDragEnd(d, y)}
+                />
+              ))}
+            </View>
+
             <Text variant="caption" muted>Los cambios se aplican a tu plan semanal. Elegir una fecha o una semana concreta llegará con el calendario.</Text>
           </>
         )}
