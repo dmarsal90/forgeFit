@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { getDrafts } from '../../db/onboarding';
 import { getActivePlan } from '../../db/plans';
 import { getNextInstance } from '../../db/schedule';
+import { getOpenWorkoutId, startWorkout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
 import { describeItem } from '../../features/PlanView';
 import { onboardingProgress, WEEKDAYS } from '../../lib/onboarding';
@@ -16,6 +17,8 @@ export default function Home() {
   const [progress, setProgress] = useState<ReturnType<typeof onboardingProgress> | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [next, setNext] = useState<Instance | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Al volver a Inicio (p. ej. tras guardar o aceptar un plan) se relee el estado del perfil activo.
   useFocusEffect(useCallback(() => {
@@ -23,6 +26,7 @@ export default function Home() {
     getDrafts(db, profile.id).then((d) => setProgress(onboardingProgress(d))).catch(() => setProgress(null));
     getActivePlan(db, profile.id).then(setPlan).catch(() => setPlan(null));
     getNextInstance(db, profile.id).then(setNext).catch(() => setNext(null));
+    getOpenWorkoutId(db, profile.id).then(setOpen).catch(() => setOpen(null));
   }, [db, profile]));
 
   const started = !!progress && progress.done > 0;
@@ -38,6 +42,12 @@ export default function Home() {
           {next.session.blocks.flatMap((b) => b.items).slice(0, 5).map((it, i) => (
             <Text key={i} muted>{describeItem(it).name}</Text>
           ))}
+          {error ? <Text accessibilityLiveRegion="polite">{error}</Text> : null}
+          <Button
+            label={open ? 'Reanudar sesión' : 'Empezar sesión'} icon="play"
+            onPress={() => (open ? Promise.resolve(open) : startWorkout(db, profile!.id, next.date))
+              .then((id) => router.push(`/workout/${id}`)).catch(() => setError('No se pudo empezar la sesión.'))}
+          />
           <Button label="Ver mi plan" variant="secondary" onPress={() => router.push('/plan')} />
         </Card>
       ) : (
