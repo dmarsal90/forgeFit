@@ -16,7 +16,7 @@ export default function ActivePlan() {
       {plan === undefined ? <Text muted>Cargando…</Text> : plan === null ? <Text muted>Aún no tienes un plan guardado.</Text> : (
         <>
           <Text muted>{plan.summary}</Text>
-          <PlanView plan={plan} />
+          <PlanView plan={plan} onEdit={(day) => router.push({ pathname: '/plan/edit', params: { day: String(day) } })} />
           <Button label="Planificar semana" icon="calendar-outline" onPress={() => router.push('/planner')} />
         </>
       )}

@@ -128,6 +128,7 @@ export default function Planner() {
                 <Text variant="subtitle">{dayName(selected)}{sel ? ` · ${sel.name}` : ' · descanso'}</Text>
                 {sel ? (
                   <>
+                    <Button variant="secondary" label="Editar sesión" icon="create-outline" onPress={() => router.push({ pathname: '/plan/edit', params: { day: String(selected), date: dates[selected] } })} disabled={isPast(selected)} />
                     {kinds.map(({ kind, label }) => (
                       <Button key={kind} variant={action === kind ? 'primary' : 'secondary'} label={label} onPress={() => setAction(action === kind ? null : kind)} disabled={futureTargets(selected, kind).length === 0} />
                     ))}

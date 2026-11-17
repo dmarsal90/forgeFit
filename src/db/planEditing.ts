@@ -1,10 +1,11 @@
 import { applyOperation, OperationError, operationSchema, type Operation } from '../lib/planOps';
-import { planSchema, type Plan } from '../lib/plan';
-import { validatePlan, type Issue } from '../lib/planValidator';
+import { planSchema, sessionSchema, type Plan, type PlanSession } from '../lib/plan';
+import { applySessionOps, SessionOpError, type SessionOp } from '../lib/sessionOps';
+import { newIssues, validatePlan, type Issue } from '../lib/planValidator';
 import { newId } from './id';
 import type { Db } from './index';
 import { loadContext } from './planContext';
-import { regenerateFuture } from './schedule';
+import { ensureHorizon, regenerateFuture } from './schedule';
 import { toDateKey, type DateKey } from '../lib/schedule';
 
 type Row = { id: string; environment_id: string | null; plan_json: string; plan_version: number };
@@ -139,4 +140,117 @@ export async function listRevisions(db: Db, profileId: string) {
      JOIN training_plans p ON p.id = r.plan_id WHERE p.profile_id = ? AND p.status = 'active' ORDER BY r.revision DESC`,
     [profileId],
   );
+}
+
+// ── V8-C: edición de una sesión (renombrar, reemplazar, añadir, quitar, prescripción, biseries…) ──────────────
+
+export type SessionEditResult =
+  | { status: 'applied'; session: PlanSession; version: number; warnings: Issue[] }
+  | { status: 'duplicate' }
+  | { status: 'stale'; version: number }
+  | { status: 'rejected'; reason: string; issues: Issue[] }
+  | { status: 'no_plan' };
+
+const onlySession = (s: PlanSession): Plan => ({ schemaVersion: 1, mode: 'local', sessions: [{ ...s, day: s.day }] });
+
+async function judge(tx: Db, profileId: string, environmentId: string | null, before: Plan, after: Plan) {
+  const ctx = await loadContext(tx, profileId, environmentId);
+  return ctx ? newIssues(before, after, ctx) : { errors: [] as Issue[], warnings: [] as Issue[] };
+}
+
+function applyOps(session: PlanSession, ops: SessionOp[]): { session: PlanSession } | { reason: string } {
+  try { return { session: sessionSchema.parse(applySessionOps(session, ops)) }; } catch (e) {
+    return { reason: e instanceof SessionOpError ? e.message : 'Los cambios no son válidos' };
+  }
+}
+
+/**
+ * Guarda los cambios de una sesión de forma atómica y con revisión nueva: «todas las semanas» edita la sesión de la plantilla
+ * (versión nueva; las semanas futuras sin cambios manuales la siguen) y `date` edita solo esa fecha. Idempotente por `operationId`.
+ */
+export async function applySessionEdit(
+  db: Db, profileId: string,
+  req: { operationId: string; ops: SessionOp[]; target: { kind: 'template'; day: number; baseVersion: number } | { kind: 'date'; date: DateKey }; reason?: string; today?: DateKey },
+): Promise<SessionEditResult> {
+  if (!req.ops.length) return { status: 'rejected', reason: 'No hay cambios que guardar', issues: [] };
+  const today = req.today ?? toDateKey();
+  let result: SessionEditResult = { status: 'no_plan' };
+
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    if ((await alreadyApplied(tx, req.operationId)) !== null) { result = { status: 'duplicate' }; return; }
+    const row = await activeRow(tx, profileId);
+    if (!row) return;
+    const plan = planSchema.parse(JSON.parse(row.plan_json));
+
+    if (req.target.kind === 'template') {
+      if (row.plan_version !== req.target.baseVersion) { result = { status: 'stale', version: row.plan_version }; return; }
+      const day = req.target.day;
+      const current = plan.sessions.find((s) => s.day === day);
+      if (!current) { result = { status: 'rejected', reason: 'Ese día no tiene sesión', issues: [] }; return; }
+      const applied = applyOps(current, req.ops);
+      if ('reason' in applied) { result = { status: 'rejected', reason: applied.reason, issues: [] }; return; }
+      const after: Plan = { ...plan, sessions: plan.sessions.map((s) => (s.day === day ? { ...applied.session, day } : s)) };
+      const { errors, warnings } = await judge(tx, profileId, row.environment_id, plan, after);
+      if (errors.length) { result = { status: 'rejected', reason: errors[0].message, issues: errors }; return; }
+      const version = await commit(tx, row, after, {
+        operationId: req.operationId, type: 'session_edit', params: { day, ops: req.ops }, origin: 'user', baseVersion: req.target.baseVersion,
+        author: 'user', reason: req.reason ?? `Sesión editada (${current.name})`, today: req.today,
+      });
+      result = { status: 'applied', session: after.sessions.find((s) => s.day === day) as PlanSession, version, warnings };
+      return;
+    }
+
+    // «Solo esta fecha»: se edita la copia de la sesión de esa instancia (no cambia la plantilla ni crea revisión)
+    const date = req.target.date;
+    await ensureHorizon(tx, profileId, date, today);
+    const inst = await tx.getFirstAsync<{ status: string; session_json: string | null }>('SELECT status, session_json FROM scheduled_sessions WHERE plan_id = ? AND date = ?', [row.id, date]);
+    if (!inst || !inst.session_json) { result = { status: 'rejected', reason: 'Esa fecha no tiene sesión', issues: [] }; return; }
+    if (date < today) { result = { status: 'rejected', reason: 'No se pueden cambiar fechas pasadas', issues: [] }; return; }
+    if (inst.status !== 'scheduled') { result = { status: 'rejected', reason: 'Una sesión ya realizada no se puede editar', issues: [] }; return; }
+    const current = sessionSchema.parse(JSON.parse(inst.session_json));
+    const applied = applyOps(current, req.ops);
+    if ('reason' in applied) { result = { status: 'rejected', reason: applied.reason, issues: [] }; return; }
+    const { errors, warnings } = await judge(tx, profileId, row.environment_id, onlySession(current), onlySession(applied.session));
+    if (errors.length) { result = { status: 'rejected', reason: errors[0].message, issues: errors }; return; }
+    await tx.runAsync("UPDATE scheduled_sessions SET session_json = ?, origin = 'override' WHERE plan_id = ? AND date = ?", [JSON.stringify(applied.session), row.id, date]);
+    await tx.runAsync(
+      'INSERT INTO plan_operations (operation_id, plan_id, type, params_json, origin, base_version, applied_revision, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [req.operationId, row.id, 'session_edit.date', JSON.stringify({ date, ops: req.ops, before: current, after: applied.session }), 'user', row.plan_version, row.plan_version, new Date().toISOString()],
+    );
+    result = { status: 'applied', session: applied.session, version: row.plan_version, warnings };
+  });
+  return result;
+}
+
+/** Deshace una edición «solo esta fecha» restaurando la sesión previa, si esa fecha sigue como la dejó la edición. */
+export async function undoDateSessionEdit(db: Db, profileId: string, req: { operationId: string; undoOf: string }): Promise<SessionEditResult> {
+  let result: SessionEditResult = { status: 'no_plan' };
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    if ((await alreadyApplied(tx, req.operationId)) !== null) { result = { status: 'duplicate' }; return; }
+    const row = await activeRow(tx, profileId);
+    if (!row) return;
+    const rec = await tx.getFirstAsync<{ params_json: string }>("SELECT params_json FROM plan_operations WHERE operation_id = ? AND plan_id = ? AND type = 'session_edit.date'", [req.undoOf, row.id]);
+    if (!rec) { result = { status: 'rejected', reason: 'No hay nada que deshacer', issues: [] }; return; }
+    if (await tx.getFirstAsync("SELECT 1 FROM plan_operations WHERE type = 'session_edit.undo' AND params_json LIKE ?", [`%"undoOf":"${req.undoOf}"%`])) {
+      result = { status: 'rejected', reason: 'Ese cambio ya se deshizo', issues: [] }; return;
+    }
+    const p = JSON.parse(rec.params_json) as { date: string; before: PlanSession; after: PlanSession };
+    const cur = await tx.getFirstAsync<{ status: string; session_json: string | null }>('SELECT status, session_json FROM scheduled_sessions WHERE plan_id = ? AND date = ?', [row.id, p.date]);
+    if (!cur || cur.status !== 'scheduled' || cur.session_json !== JSON.stringify(p.after)) { result = { status: 'rejected', reason: 'Esa fecha cambió desde entonces', issues: [] }; return; }
+    await tx.runAsync('UPDATE scheduled_sessions SET session_json = ? WHERE plan_id = ? AND date = ?', [JSON.stringify(p.before), row.id, p.date]);
+    await tx.runAsync(
+      'INSERT INTO plan_operations (operation_id, plan_id, type, params_json, origin, base_version, applied_revision, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [req.operationId, row.id, 'session_edit.undo', JSON.stringify({ undoOf: req.undoOf, date: p.date }), 'user', row.plan_version, row.plan_version, new Date().toISOString()],
+    );
+    result = { status: 'applied', session: p.before, version: row.plan_version, warnings: [] };
+  });
+  return result;
+}
+
+/** Todo lo que necesita la pantalla de edición: el plan con su versión y el contexto de validación (equipo, molestias, nivel). */
+export async function getEditorContext(db: Db, profileId: string) {
+  const row = await activeRow(db, profileId);
+  if (!row) return null;
+  const plan = planSchema.parse(JSON.parse(row.plan_json));
+  return { plan, version: row.plan_version, ctx: await loadContext(db, profileId, row.environment_id) };
 }

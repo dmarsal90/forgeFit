@@ -113,3 +113,17 @@ export function validatePlan(input: unknown, ctx: PlanContext): Validation {
 
   return { ok: !issues.some((i) => i.severity === 'error'), issues };
 }
+
+const sameIssue = (a: Issue, b: Issue) => a.code === b.code && a.message === b.message;
+
+/**
+ * Problemas que un cambio INTRODUCE (lo que ya estaba mal antes no cuenta): los errores bloquean, los avisos se muestran.
+ * La disponibilidad solo avisa: decide la persona.
+ */
+export function newIssues(before: Plan, after: Plan, ctx: PlanContext): { errors: Issue[]; warnings: Issue[] } {
+  const prev = validatePlan(before, ctx).issues;
+  const fresh = validatePlan(after, ctx).issues
+    .filter((i) => !prev.some((p) => sameIssue(p, i)))
+    .map((i): Issue => (i.code === 'day_unavailable' ? { ...i, severity: 'warning' } : i));
+  return { errors: fresh.filter((i) => i.severity === 'error'), warnings: fresh.filter((i) => i.severity === 'warning') };
+}

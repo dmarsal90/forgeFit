@@ -345,7 +345,7 @@ export const CATALOG: CatalogItem[] = [
   ]),
 ];
 
-const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+export const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 /** Búsqueda por nombre ES/EN y aliases, sin acentos ni mayúsculas, filtrable por familia. */
 export function searchCatalog(query: string, family?: string | null): CatalogItem[] {
