@@ -36,9 +36,11 @@ export async function listCustomItems(db: Db, profileId: string): Promise<Catalo
 export async function deleteCustomItem(db: Db, profileId: string, id: string) {
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync('DELETE FROM custom_equipment WHERE id = ? AND profile_id = ?', [id, profileId]);
-    await tx.runAsync(
-      'DELETE FROM environment_inventory WHERE equipment_id = ? AND environment_id IN (SELECT id FROM training_environments WHERE profile_id = ?)',
-      [id, profileId],
-    );
+    for (const table of ['environment_inventory', 'equipment_attributes']) {
+      await tx.runAsync(
+        `DELETE FROM ${table} WHERE equipment_id = ? AND environment_id IN (SELECT id FROM training_environments WHERE profile_id = ?)`,
+        [id, profileId],
+      );
+    }
   });
 }
