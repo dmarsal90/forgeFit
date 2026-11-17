@@ -1,16 +1,24 @@
 import { planSchema, type Plan } from '../lib/plan';
 import type { Db } from './index';
+import { newId } from './id';
 
 /** Guarda el plan como activo y archiva el anterior del mismo perfil (solo hay uno activo). */
 export async function saveActivePlan(db: Db, profileId: string, plan: Plan, environmentId: string | null) {
   const valid = planSchema.parse(plan); // límite de confianza: nada sin validar entra en la base
-  const r = await db.getFirstAsync<{ id: string }>('SELECT lower(hex(randomblob(16))) AS id');
-  if (!r) throw new Error('No se pudo generar el id');
+  const planId = await newId(db);
+  const revisionId = await newId(db);
+  const now = new Date().toISOString();
+  const json = JSON.stringify(valid);
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync("UPDATE training_plans SET status = 'archived' WHERE profile_id = ? AND status = 'active'", [profileId]);
     await tx.runAsync(
-      "INSERT INTO training_plans (id, profile_id, environment_id, mode, status, plan_json, created_at) VALUES (?,?,?,?,'active',?,?)",
-      [r.id, profileId, environmentId, valid.mode, JSON.stringify(valid), new Date().toISOString()],
+      "INSERT INTO training_plans (id, profile_id, environment_id, mode, status, plan_json, created_at, plan_version) VALUES (?,?,?,?,'active',?,?,1)",
+      [planId, profileId, environmentId, valid.mode, json, now],
+    );
+    // La generación inicial es la revisión 1 («Plan original, generado por ForgeFit»).
+    await tx.runAsync(
+      "INSERT INTO plan_revisions (id, plan_id, revision, author, reason, definition_json, created_at) VALUES (?,?,1,'engine',NULL,?,?)",
+      [revisionId, planId, json, now],
     );
   });
 }
@@ -25,10 +33,4 @@ export async function getActivePlan(db: Db, profileId: string): Promise<Plan | n
     const parsed = planSchema.safeParse(JSON.parse(row.plan_json));
     return parsed.success ? parsed.data : null;
   } catch { return null; }
-}
-
-/** Reemplaza el contenido del plan activo (p. ej. tras mover días), validándolo antes de escribir. */
-export async function updateActivePlan(db: Db, profileId: string, plan: Plan) {
-  const valid = planSchema.parse(plan);
-  await db.runAsync("UPDATE training_plans SET plan_json = ? WHERE profile_id = ? AND status = 'active'", [JSON.stringify(valid), profileId]);
 }

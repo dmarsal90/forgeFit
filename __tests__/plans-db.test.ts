@@ -1,5 +1,5 @@
 import { migrate } from '../src/db';
-import { getActivePlan, saveActivePlan, updateActivePlan } from '../src/db/plans';
+import { getActivePlan, saveActivePlan } from '../src/db/plans';
 import { createProfile, deleteProfile } from '../src/db/profiles';
 import { moveSession, nextSession, type Plan } from '../src/lib/plan';
 import { memoryDb } from '../test-utils/sqlite';
@@ -68,13 +68,4 @@ it('moveSession: mueve a un día libre, intercambia con uno ocupado y nunca dupl
   expect(() => moveSession(p, 1, 3)).toThrow(); // no hay sesión el martes
   expect(() => moveSession(p, 0, 9)).toThrow();
   expect(p.sessions.map((s) => s.day)).toEqual([0, 2, 4]); // no muta el original
-});
-
-it('updateActivePlan reescribe el plan activo sin crear otro y rechaza planes inválidos', async () => {
-  const { db, a } = await setup();
-  await saveActivePlan(db, a.id, plan('Antes'), null);
-  await updateActivePlan(db, a.id, moveSession(plan('Antes'), 0, 1));
-  expect((await getActivePlan(db, a.id))?.sessions.map((s) => s.day)).toEqual([1, 2, 4]);
-  expect((await db.getAllAsync('SELECT 1 FROM training_plans WHERE profile_id = ?', [a.id])).length).toBe(1);
-  await expect(updateActivePlan(db, a.id, { ...plan(), sessions: [] } as Plan)).rejects.toThrow();
 });
