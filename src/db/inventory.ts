@@ -71,3 +71,15 @@ export async function inventorySummary(db: Db, profileId: string) {
     [profileId],
   );
 }
+
+/** Entornos del perfil con cuántos equipos indicó (disponibles / no disponibles). */
+export async function listEnvironments(db: Db, profileId: string) {
+  return db.getAllAsync<{ id: string; kind: EnvKind; available: number; unavailable: number }>(
+    `SELECT e.id AS id, e.kind AS kind,
+            COALESCE(SUM(i.state = 'available'), 0) AS available,
+            COALESCE(SUM(i.state = 'unavailable'), 0) AS unavailable
+     FROM training_environments e LEFT JOIN environment_inventory i ON i.environment_id = e.id
+     WHERE e.profile_id = ? GROUP BY e.id ORDER BY e.rowid`,
+    [profileId],
+  );
+}
