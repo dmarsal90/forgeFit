@@ -112,11 +112,14 @@ export async function restoreRevision(
       'SELECT definition_json FROM plan_revisions WHERE plan_id = ? AND revision = ?', [row.id, req.revision]);
     const parsed = target ? planSchema.safeParse(JSON.parse(target.definition_json)) : null;
     if (!parsed || !parsed.success) { result = { status: 'rejected', reason: 'Esa versión no existe', issues: [] }; return; }
+    // Restaurar es una decisión explícita de la persona: lo que ya no encaje (equipo ausente, día no disponible) avisa, no bloquea.
+    const ctx = await loadContext(tx, profileId, row.environment_id);
+    const { errors, warnings } = ctx ? newIssues(planSchema.parse(JSON.parse(row.plan_json)), parsed.data, ctx) : { errors: [], warnings: [] };
     const version = await commit(tx, row, parsed.data, {
       operationId: req.operationId, type: 'restore', params: { revision: req.revision }, origin: 'user', baseVersion: req.baseVersion,
       author: 'user', reason: req.reason ?? `Restaurada la versión ${req.revision}`, today: req.today,
     });
-    result = { status: 'applied', plan: parsed.data, version, warnings: [] };
+    result = { status: 'applied', plan: parsed.data, version, warnings: [...errors, ...warnings].map((i): Issue => ({ ...i, severity: 'warning' })) };
   });
   return result;
 }
@@ -132,6 +135,15 @@ export async function getActivePlanState(db: Db, profileId: string): Promise<{ p
   if (!row) return null;
   const parsed = planSchema.safeParse(JSON.parse(row.plan_json));
   return parsed.success ? { plan: parsed.data, version: row.plan_version } : null;
+}
+
+/** Definición de una revisión del plan activo (para comparar). */
+export async function getRevisionPlan(db: Db, profileId: string, revision: number): Promise<Plan | null> {
+  const r = await db.getFirstAsync<{ definition_json: string }>(
+    `SELECT r.definition_json FROM plan_revisions r JOIN training_plans p ON p.id = r.plan_id
+     WHERE p.profile_id = ? AND p.status = 'active' AND r.revision = ?`, [profileId, revision]);
+  const parsed = r ? planSchema.safeParse(JSON.parse(r.definition_json)) : null;
+  return parsed?.success ? parsed.data : null;
 }
 
 export async function listRevisions(db: Db, profileId: string) {
