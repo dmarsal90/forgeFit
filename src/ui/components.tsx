@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ReactNode } from 'react';
 import {
-  Pressable, ScrollView, StyleProp, StyleSheet, Text as RNText, TextInput, TextInputProps, View, ViewStyle,
+  KeyboardAvoidingView, Pressable, ScrollView, StyleProp, StyleSheet, Text as RNText, TextInput, TextInputProps, View, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, MIN_TOUCH, radius, space, type } from './tokens';
@@ -18,12 +18,13 @@ export function Screen({ children, scroll = true, style, tab }: { children: Reac
   // El área se recorta a la zona segura: nada se dibuja bajo la barra de estado ni la de navegación.
   const frame = { paddingTop: insets.top, paddingBottom: tab ? 0 : insets.bottom };
   if (!scroll) return <View style={[s.screen, frame, { padding: space.lg }, style]}>{children}</View>;
+  // Con edge-to-edge Android no redimensiona solo: sin el padding el teclado tapa los botones.
   return (
-    <View style={[s.screen, frame]}>
+    <KeyboardAvoidingView style={[s.screen, frame]} behavior="padding">
       <ScrollView style={{ flex: 1 }} contentContainerStyle={[{ padding: space.lg, flexGrow: 1, gap: space.lg }, style]} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -106,4 +106,26 @@ export const migrations: string[] = [
      before_json TEXT NOT NULL,
      at TEXT NOT NULL
    );`,
+  // Fase 5: sesión activa. El estado se deriva de los eventos (solo se añaden); `snapshot_json` congela la
+  // sesión al empezar, así editar o restaurar el plan después nunca reescribe lo ya entrenado.
+  `CREATE TABLE workout_sessions (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     scheduled_session_id TEXT REFERENCES scheduled_sessions(id) ON DELETE SET NULL,
+     status TEXT NOT NULL CHECK (status IN ('active','finished')),
+     started_at INTEGER NOT NULL,
+     ended_at INTEGER,
+     snapshot_json TEXT NOT NULL
+   );
+   CREATE INDEX workout_sessions_profile ON workout_sessions (profile_id, status);
+   CREATE TABLE session_events (
+     id TEXT PRIMARY KEY NOT NULL,
+     session_id TEXT NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+     seq INTEGER NOT NULL,
+     at INTEGER NOT NULL,
+     event_json TEXT NOT NULL,
+     UNIQUE (session_id, seq)
+   );
+   -- Inmutable: una corrección es un evento nuevo (el borrado solo ocurre en cascada al eliminar el perfil).
+   CREATE TRIGGER session_events_immutable BEFORE UPDATE ON session_events BEGIN SELECT RAISE(ABORT, 'session_events es inmutable'); END;`,
 ];
