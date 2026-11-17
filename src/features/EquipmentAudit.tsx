@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, View } from 'react-native';
 import { CATALOG, CatalogItem, FAMILIES, searchCatalog } from '../data/equipment';
@@ -44,17 +45,17 @@ function IconToggle({ icon, label, active, tint, onPress }: {
 }
 
 // Memoizada: al marcar un equipo solo se repinta su fila, no las ~275 del catálogo.
-const ItemRow = memo(function ItemRow({ item, state, onSet, onDelete }: {
+const ItemRow = memo(function ItemRow({ item, state, onSet, onDelete, onOpen }: {
   item: CatalogItem; state: ItemState | undefined; onSet: (id: string, prev: ItemState | null, next: ItemState | null) => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void; onOpen: (id: string) => void;
 }) {
   const prev = state ?? null;
   return (
     <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, marginBottom: space.sm }}>
-      <View style={{ flex: 1 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Ficha: ${item.es}`} onPress={() => onOpen(item.id)} style={{ flex: 1, minHeight: MIN_TOUCH, justifyContent: 'center' }}>
         <Text>{item.es}</Text>
         {item.en ? <Text variant="caption" muted numberOfLines={1}>{item.en}</Text> : null}
-      </View>
+      </Pressable>
       {onDelete ? <IconToggle icon="trash-outline" label={`Eliminar equipo propio: ${item.es}`} active={false} tint={colors.error} onPress={() => onDelete(item.id)} /> : null}
       <IconToggle icon="checkmark" label={`Tengo: ${item.es}`} active={state === 'available'} tint={colors.accent}
         onPress={() => onSet(item.id, prev, prev === 'available' ? null : 'available')} />
@@ -131,6 +132,8 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
       setError('No se pudo guardar el cambio.');
     }
   }, [db, envId]);
+
+  const openSheet = useCallback((id: string) => { if (envId) router.push(`/equipment/${id}?env=${envId}` as never); }, [envId]);
 
   const toggleGroup = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: !o[id] })), []);
 
@@ -237,7 +240,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         renderItem={({ item: r }) => 'group' in r ? (
           <GroupHeader {...r.group} onToggle={toggleGroup} />
         ) : (
-          <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} onDelete={r.item.id.startsWith(CUSTOM_PREFIX) ? removeOwn : undefined} />
+          <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} onDelete={r.item.id.startsWith(CUSTOM_PREFIX) ? removeOwn : undefined} onOpen={openSheet} />
         )}
       />
       <View style={{ flexDirection: 'row', gap: space.sm, paddingTop: space.md }}>
