@@ -31,9 +31,16 @@ export async function getInventory(db: Db, environmentId: string): Promise<Recor
   return Object.fromEntries(rows.map((r) => [r.equipment_id, r.state]));
 }
 
+// El equipo propio solo vale en entornos del perfil que lo creó.
+const isOwnItem = async (db: Db, environmentId: string, equipmentId: string) =>
+  !!(await db.getFirstAsync(
+    'SELECT 1 FROM custom_equipment c JOIN training_environments e ON e.profile_id = c.profile_id WHERE c.id = ? AND e.id = ?',
+    [equipmentId, environmentId],
+  ));
+
 /** `null` vuelve a «sin indicar» (borra la fila). */
 export async function setItemState(db: Db, environmentId: string, equipmentId: string, state: ItemState | null) {
-  if (!known.has(equipmentId)) throw new Error(`Equipo desconocido: ${equipmentId}`);
+  if (!known.has(equipmentId) && !(await isOwnItem(db, environmentId, equipmentId))) throw new Error(`Equipo desconocido: ${equipmentId}`);
   if (state === null) {
     await db.runAsync('DELETE FROM environment_inventory WHERE environment_id = ? AND equipment_id = ?', [environmentId, equipmentId]);
     return;
@@ -48,10 +55,14 @@ export async function setItemState(db: Db, environmentId: string, equipmentId: s
 export async function markNoEquipment(db: Db, environmentId: string) {
   const now = new Date().toISOString();
   await db.withExclusiveTransactionAsync(async (tx) => {
-    for (const i of CATALOG) {
+    const own = await tx.getAllAsync<{ id: string }>(
+      'SELECT c.id FROM custom_equipment c JOIN training_environments e ON e.profile_id = c.profile_id WHERE e.id = ?',
+      [environmentId],
+    );
+    for (const id of [...CATALOG.map((i) => i.id), ...own.map((o) => o.id)]) {
       await tx.runAsync(
         'INSERT OR REPLACE INTO environment_inventory (environment_id, equipment_id, state, updated_at) VALUES (?,?,?,?)',
-        [environmentId, i.id, 'unavailable', now],
+        [environmentId, id, 'unavailable', now],
       );
     }
   });

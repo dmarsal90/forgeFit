@@ -1,3 +1,4 @@
+import { addCustomItem, deleteCustomItem, listCustomItems } from '../src/db/customEquipment';
 import { migrate } from '../src/db';
 import { clearInventory, ensureEnvironment, getInventory, inventorySummary, markNoEquipment, setItemState } from '../src/db/inventory';
 import { createProfile, deleteProfile } from '../src/db/profiles';
@@ -85,4 +86,41 @@ it('inventorySummary cuenta disponibles y no disponibles por entorno', async () 
     { kind: 'home', available: 1, unavailable: 1 },
     { kind: 'gym', available: 0, unavailable: 0 },
   ]);
+});
+
+describe('equipo propio', () => {
+  it('se valida, es único por nombre y perfil, y el inventario lo acepta solo en entornos del dueño', async () => {
+    const { db, a, b } = await setup();
+    const item = await addCustomItem(db, a.id, { name: '  Barra olímpica casera ', family: 'free_weights' });
+    expect(item.es).toBe('Barra olímpica casera');
+    await expect(addCustomItem(db, a.id, { name: 'barra OLÍMPICA casera', family: 'cables' })).rejects.toThrow('Ya tienes');
+    await expect(addCustomItem(db, a.id, { name: '   ', family: 'cables' })).rejects.toThrow();
+    await expect(addCustomItem(db, a.id, { name: 'X', family: 'nope' })).rejects.toThrow();
+    await addCustomItem(db, b.id, { name: 'Barra olímpica casera', family: 'free_weights' }); // otro perfil: permitido
+
+    const envA = await ensureEnvironment(db, a.id, 'home');
+    const envB = await ensureEnvironment(db, b.id, 'home');
+    await setItemState(db, envA, item.id, 'available');
+    expect(await getInventory(db, envA)).toEqual({ [item.id]: 'available' });
+    await expect(setItemState(db, envB, item.id, 'available')).rejects.toThrow('desconocido');
+    expect(await listCustomItems(db, a.id)).toEqual([item]);
+  });
+
+  it('«no tengo equipamiento» incluye lo propio y borrar limpia su estado', async () => {
+    const { db, a } = await setup();
+    const item = await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
+    const env = await ensureEnvironment(db, a.id, 'home');
+    await markNoEquipment(db, env);
+    expect((await getInventory(db, env))[item.id]).toBe('unavailable');
+    await deleteCustomItem(db, a.id, item.id);
+    expect((await getInventory(db, env))[item.id]).toBeUndefined();
+    expect(await listCustomItems(db, a.id)).toEqual([]);
+  });
+
+  it('eliminar el perfil borra su equipo propio', async () => {
+    const { db, a } = await setup();
+    await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
+    await deleteProfile(db, a.id);
+    expect(await db.getAllAsync('SELECT 1 FROM custom_equipment')).toEqual([]);
+  });
 });
