@@ -149,4 +149,11 @@ export const migrations: string[] = [
      updated_at TEXT NOT NULL,
      PRIMARY KEY (environment_id, equipment_id)
    );`,
+  // Fase 3c: favoritos por perfil (no por entorno: el equipo preferido es el mismo en casa y en el gimnasio).
+  `CREATE TABLE equipment_favorites (
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     equipment_id TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     PRIMARY KEY (profile_id, equipment_id)
+   );`,
 ];

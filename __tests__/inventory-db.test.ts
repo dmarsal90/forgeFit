@@ -1,3 +1,4 @@
+import { listFavorites, setFavorite } from '../src/db/favorites';
 import { getAttributes, NO_ATTRIBUTES, setAttributes } from '../src/db/equipmentAttributes';
 import { addCustomItem, deleteCustomItem, listCustomItems } from '../src/db/customEquipment';
 import { migrate } from '../src/db';
@@ -154,5 +155,34 @@ describe('atributos de equipo', () => {
     await setAttributes(db, env, item.id, { minKg: null, maxKg: 100, stepKg: null, barKg: null });
     await deleteCustomItem(db, a.id, item.id);
     expect(await db.getAllAsync('SELECT 1 FROM equipment_attributes')).toEqual([]);
+  });
+});
+
+describe('favoritos', () => {
+  it('son por perfil, idempotentes y solo de equipo conocido o propio', async () => {
+    const { db, a, b } = await setup();
+    await setFavorite(db, a.id, 'bench_flat_fixed', true);
+    await setFavorite(db, a.id, 'bench_flat_fixed', true);
+    expect([...(await listFavorites(db, a.id))]).toEqual(['bench_flat_fixed']);
+    expect((await listFavorites(db, b.id)).size).toBe(0);
+
+    await expect(setFavorite(db, a.id, 'nope', true)).rejects.toThrow('desconocido');
+    const own = await addCustomItem(db, b.id, { name: 'Anillas', family: 'bodyweight' });
+    await expect(setFavorite(db, a.id, own.id, true)).rejects.toThrow('desconocido'); // equipo propio ajeno
+
+    await setFavorite(db, a.id, 'bench_flat_fixed', false);
+    await setFavorite(db, a.id, 'bench_flat_fixed', false);
+    expect((await listFavorites(db, a.id)).size).toBe(0);
+  });
+
+  it('borrar el equipo propio o el perfil quita sus favoritos', async () => {
+    const { db, a, b } = await setup();
+    const own = await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
+    await setFavorite(db, a.id, own.id, true);
+    await setFavorite(db, b.id, 'bench_flat_fixed', true);
+    await deleteCustomItem(db, a.id, own.id);
+    expect((await listFavorites(db, a.id)).size).toBe(0);
+    await deleteProfile(db, b.id);
+    expect(await db.getAllAsync('SELECT 1 FROM equipment_favorites')).toEqual([]);
   });
 });

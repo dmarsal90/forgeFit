@@ -3,6 +3,7 @@ import EquipmentSheet from '../src/app/equipment/[id]';
 import { migrate } from '../src/db';
 import { addCustomItem } from '../src/db/customEquipment';
 import { getAttributes } from '../src/db/equipmentAttributes';
+import { listFavorites } from '../src/db/favorites';
 import { ensureEnvironment, getInventory } from '../src/db/inventory';
 import { createProfile } from '../src/db/profiles';
 import { memoryDb } from '../test-utils/sqlite';
@@ -56,4 +57,16 @@ it('no abre un entorno de otro perfil ni un equipo propio ajeno', async () => {
   mockParams = { id: own.id, env: otherEnv };
   await render(<EquipmentSheet />);
   expect(await screen.findByText('No se encontró este equipo.')).toBeTruthy();
+});
+
+it('marca y desmarca el favorito', async () => {
+  const { db, profile, env } = await seed();
+  mockParams = { id: 'bench_flat_fixed', env };
+  await render(<EquipmentSheet />);
+  await fireEvent.press(await screen.findByText('Añadir a favoritos'));
+  expect(await screen.findByText('Quitar de favoritos')).toBeTruthy();
+  expect([...(await listFavorites(db, profile.id))]).toEqual(['bench_flat_fixed']);
+  await fireEvent.press(screen.getByText('Quitar de favoritos'));
+  expect(await screen.findByText('Añadir a favoritos')).toBeTruthy();
+  expect((await listFavorites(db, profile.id)).size).toBe(0);
 });
