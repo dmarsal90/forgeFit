@@ -1,12 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { migrate } from '../src/db';
 import { getInventory, ensureEnvironment } from '../src/db/inventory';
+import { setFavorite } from '../src/db/favorites';
 import { saveDraft } from '../src/db/onboarding';
 import { createProfile } from '../src/db/profiles';
 import { EquipmentAudit } from '../src/features/EquipmentAudit';
 import { memoryDb } from '../test-utils/sqlite';
 
 let mockApp: unknown;
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return { router: { push: jest.fn() }, useFocusEffect: (cb: () => void) => useEffect(cb, [cb]) };
+});
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('../src/features/AppContext', () => ({ useApp: () => mockApp }));
 
@@ -92,4 +97,18 @@ it('añade un equipo propio, lo marca y lo elimina', async () => {
   await fireEvent.press(screen.getByLabelText('Eliminar equipo propio: Anillas de madera'));
   await waitFor(() => expect(screen.queryByText('Anillas de madera')).toBeNull());
   expect(await getInventory(db, home)).toEqual({});
+});
+
+it('«Solo favoritos» muestra únicamente los favoritos, desplegados', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['home'] });
+  await setFavorite(db, a.id, 'bench_flat_fixed', true);
+  mockApp = { db, profile: a };
+  await render(<EquipmentAudit profileId={a.id} onNext={noop} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
+
+  await fireEvent.press(await screen.findByText('Solo favoritos'));
+  expect(await screen.findByText('Banco plano fijo')).toBeTruthy();
+  expect(screen.queryByText('Banco declinado')).toBeNull();
 });

@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, View } from 'react-native';
 import { CATALOG, CatalogItem, FAMILIES, searchCatalog } from '../data/equipment';
 import { addCustomItem, CUSTOM_PREFIX, deleteCustomItem, listCustomItems } from '../db/customEquipment';
 import { ENV_LABELS, EnvKind, ensureEnvironment, getInventory, ItemState, markNoEquipment, setItemState } from '../db/inventory';
+import { listFavorites } from '../db/favorites';
 import { getDrafts } from '../db/onboarding';
 import { Button, Card, Field, Screen, Text } from '../ui/components';
 import { colors, MIN_TOUCH, radius, space } from '../ui/tokens';
@@ -97,9 +98,16 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
   const [error, setError] = useState<string | null>(null);
   const [custom, setCustom] = useState<CatalogItem[]>([]);
   const [adding, setAdding] = useState(false);
+  const [favs, setFavs] = useState<Set<string>>(new Set());
+  const [onlyFavs, setOnlyFavs] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFamily, setNewFamily] = useState(FAMILIES[0].id);
   const items = useMemo(() => [...CATALOG, ...custom], [custom]);
+
+  // Se recarga al volver de la ficha, donde se marcan los favoritos.
+  useFocusEffect(useCallback(() => {
+    listFavorites(db, profileId).then(setFavs).catch(() => setError('No se pudieron cargar tus favoritos.'));
+  }, [db, profileId]));
 
   useEffect(() => {
     listCustomItems(db, profileId).then(setCustom).catch(() => setError('No se pudo cargar tu equipo propio.'));
@@ -165,16 +173,16 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
     const out: Row[] = [];
     const searching = query.trim() !== '';
     for (const f of FAMILIES) {
-      const found = searchCatalog(query, f.id, items);
+      const found = searchCatalog(query, f.id, onlyFavs ? items.filter((i) => favs.has(i.id)) : items);
       if (!found.length) continue;
-      const expanded = searching || !!open[f.id]; // al buscar se despliegan los grupos con resultados
+      const expanded = searching || onlyFavs || !!open[f.id]; // al buscar o filtrar se despliegan los grupos con resultados
       const all = items.filter((i) => i.family === f.id);
       const marked = all.reduce((n, i) => n + (inventory[i.id] ? 1 : 0), 0);
       out.push({ key: `g_${f.id}`, group: { id: f.id, label: f.label, marked, total: all.length, expanded } });
       if (expanded) for (const item of found) out.push({ key: item.id, item });
     }
     return out;
-  }, [query, open, inventory, items]);
+  }, [query, open, inventory, items, onlyFavs, favs]);
 
   const counts = useMemo(() => {
     const v = Object.values(inventory);
@@ -201,6 +209,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         {(kinds ?? []).map((k) => <Chip key={k} label={ENV_LABELS[k]} selected={k === kind} onPress={() => setKind(k)} />)}
       </ScrollView>
       <Field label="Buscar equipo" value={query} onChangeText={setQuery} placeholder="Ej.: banco prone, hack squat, polea" autoCorrect={false} />
+      <View style={{ flexDirection: 'row' }}><Chip label="Solo favoritos" selected={onlyFavs} onPress={() => setOnlyFavs((v) => !v)} /></View>
       <Text variant="caption" muted>✓ Tengo · ✕ No tengo · sin marcar = sin indicar</Text>
       <Text variant="caption" muted accessibilityLiveRegion="polite">
         {counts.yes} disponibles · {counts.no} no disponibles · {items.length - counts.yes - counts.no} sin indicar

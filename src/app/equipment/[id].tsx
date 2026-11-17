@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import { CATALOG, FAMILIES, type CatalogItem } from '../../data/equipment';
 import { listCustomItems } from '../../db/customEquipment';
 import { attributesSchema, getAttributes, setAttributes } from '../../db/equipmentAttributes';
+import { listFavorites, setFavorite } from '../../db/favorites';
 import { getInventory, ItemState, setItemState } from '../../db/inventory';
 import { useApp } from '../../features/AppContext';
 import { Button, Card, Field, Screen, Text } from '../../ui/components';
@@ -25,6 +26,7 @@ export default function EquipmentSheet() {
   const { id, env } = useLocalSearchParams<{ id: string; env: string }>();
   const [item, setItem] = useState<CatalogItem | null | undefined>(undefined);
   const [state, setState] = useState<ItemState | undefined>();
+  const [fav, setFav] = useState(false);
   const [text, setText] = useState<Record<Key, string>>({ minKg: '', maxKg: '', stepKg: '', barKg: '' });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -36,8 +38,9 @@ export default function EquipmentSheet() {
       const own = await db.getFirstAsync('SELECT 1 FROM training_environments WHERE id = ? AND profile_id = ?', [env, profile.id]);
       const found = own ? CATALOG.find((i) => i.id === id) ?? (await listCustomItems(db, profile.id)).find((i) => i.id === id) : undefined;
       if (!found) { setItem(null); return; }
-      const [inv, a] = await Promise.all([getInventory(db, env), getAttributes(db, env, id)]);
+      const [inv, a, favs] = await Promise.all([getInventory(db, env), getAttributes(db, env, id), listFavorites(db, profile.id)]);
       setState(inv[id]);
+      setFav(favs.has(id));
       setText(Object.fromEntries(FIELDS.map((f) => [f.key, a[f.key] === null ? '' : String(a[f.key])])) as Record<Key, string>);
       setItem(found);
     })().catch(() => setItem(null));
@@ -46,6 +49,11 @@ export default function EquipmentSheet() {
   async function toggle(next: ItemState) {
     const value = state === next ? null : next;
     try { await setItemState(db, env, id, value); setState(value ?? undefined); setError(null); } catch { setError('No se pudo guardar el estado.'); }
+  }
+
+  async function toggleFav() {
+    if (!profile) return;
+    try { await setFavorite(db, profile.id, id, !fav); setFav(!fav); setError(null); } catch { setError('No se pudo guardar el favorito.'); }
   }
 
   async function save() {
@@ -68,6 +76,8 @@ export default function EquipmentSheet() {
       <Text variant="title">{item.es}</Text>
       {item.en ? <Text muted>{item.en}</Text> : null}
       <Text variant="caption" muted>{FAMILIES.find((f) => f.id === item.family)?.label}{item.aliases.length ? ` · También: ${item.aliases.join(', ')}` : ''}</Text>
+
+      <Button variant="secondary" icon={fav ? 'star' : 'star-outline'} label={fav ? 'Quitar de favoritos' : 'Añadir a favoritos'} onPress={toggleFav} />
 
       <Card style={{ gap: space.md }}>
         <Text variant="subtitle">En este entorno</Text>

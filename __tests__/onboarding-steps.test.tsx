@@ -9,7 +9,14 @@ import { memoryDb } from '../test-utils/sqlite';
 const mockReplace = jest.fn();
 let mockApp: unknown;
 let mockStep = '2';
-jest.mock('expo-router', () => ({ router: { replace: (...a: unknown[]) => mockReplace(...a) }, useLocalSearchParams: () => ({ step: mockStep }) }));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    router: { replace: (...a: unknown[]) => mockReplace(...a) },
+    useLocalSearchParams: () => ({ step: mockStep }),
+    useFocusEffect: (cb: () => void) => useEffect(cb, [cb]),
+  };
+});
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('../src/features/AppContext', () => ({ useApp: () => mockApp }));
 
