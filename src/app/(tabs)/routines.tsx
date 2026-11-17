@@ -10,7 +10,7 @@ import { colors, space } from '../../ui/tokens';
 
 export default function RoutinesScreen() {
   const { profile } = useApp();
-  const { plan, allowedDays, move, error } = usePlanEditor();
+  const { plan } = usePlanEditor();
 
   const today = todayIndex();
   return (
@@ -34,9 +34,9 @@ export default function RoutinesScreen() {
               );
             })}
             <Text variant="caption" muted>Los días de descanso son parte del plan y no rompen tu racha.</Text>
+            <Button variant="secondary" label="Planificar semana" icon="calendar-outline" onPress={() => router.push('/planner')} />
           </Card>
-          {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
-          <PlanView plan={plan} onMove={move} allowedDays={allowedDays} />
+          <PlanView plan={plan} />
           <Button variant="secondary" label="Rehacer plan" onPress={() => router.push('/plan/proposal')} />
         </>
       )}
