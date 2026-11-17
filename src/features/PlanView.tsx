@@ -48,8 +48,8 @@ function DayPicker({ plan, from, allowed, onPick }: { plan: Plan; from: number; 
 }
 
 /** Lista de sesiones del plan. Con `onMove` cada sesión permite cambiar de día (solo a días disponibles). */
-export function PlanView({ plan, onMove, allowedDays = [0, 1, 2, 3, 4, 5, 6] }: {
-  plan: Plan; onMove?: (fromDay: number, toDay: number) => void; allowedDays?: readonly number[];
+export function PlanView({ plan, onMove, onEdit, allowedDays = [0, 1, 2, 3, 4, 5, 6] }: {
+  plan: Plan; onMove?: (fromDay: number, toDay: number) => void; onEdit?: (day: number) => void; allowedDays?: readonly number[];
 }) {
   const [picking, setPicking] = useState<number | null>(null);
   return (
@@ -69,6 +69,7 @@ export function PlanView({ plan, onMove, allowedDays = [0, 1, 2, 3, 4, 5, 6] }: 
               </View>
             );
           })}
+          {onEdit ? <Button variant="ghost" label="Editar sesión" icon="create-outline" onPress={() => onEdit(s.day)} /> : null}
           {onMove ? (picking === s.day
             ? <DayPicker plan={plan} from={s.day} allowed={allowedDays} onPick={(to) => { setPicking(null); onMove(s.day, to); }} />
             : <Button variant="ghost" label="Cambiar de día" icon="swap-horizontal" onPress={() => setPicking(s.day)} />) : null}

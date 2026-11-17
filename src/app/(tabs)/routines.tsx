@@ -40,7 +40,7 @@ export default function RoutinesScreen() {
             <Text variant="caption" muted>Los días de descanso son parte del plan y no rompen tu racha.</Text>
             <Button variant="secondary" label="Planificar semana" icon="calendar-outline" onPress={() => router.push('/planner')} />
           </Card>
-          <PlanView plan={plan} />
+          <PlanView plan={plan} onEdit={(day) => router.push({ pathname: '/plan/edit', params: { day: String(day) } })} />
           <Button variant="secondary" label="Rehacer plan" onPress={() => router.push('/plan/proposal')} />
         </>
       )}
