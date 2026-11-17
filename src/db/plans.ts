@@ -1,6 +1,8 @@
 import { planSchema, type Plan } from '../lib/plan';
+import { toDateKey } from '../lib/schedule';
 import type { Db } from './index';
 import { newId } from './id';
+import { ensureHorizon } from './schedule';
 
 /** Guarda el plan como activo y archiva el anterior del mismo perfil (solo hay uno activo). */
 export async function saveActivePlan(db: Db, profileId: string, plan: Plan, environmentId: string | null) {
@@ -20,6 +22,7 @@ export async function saveActivePlan(db: Db, profileId: string, plan: Plan, envi
       "INSERT INTO plan_revisions (id, plan_id, revision, author, reason, definition_json, created_at) VALUES (?,?,1,'engine',NULL,?,?)",
       [revisionId, planId, json, now],
     );
+    await ensureHorizon(tx, profileId, toDateKey(new Date(now)), toDateKey(new Date(now)));
   });
 }
 

@@ -1,11 +1,11 @@
 import { applyOperation, OperationError, operationSchema, type Operation } from '../lib/planOps';
 import { planSchema, type Plan } from '../lib/plan';
-import { inputFromDrafts } from '../lib/planEngine';
-import { validatePlan, type Issue, type PlanContext } from '../lib/planValidator';
+import { validatePlan, type Issue } from '../lib/planValidator';
 import { newId } from './id';
 import type { Db } from './index';
-import { getInventory } from './inventory';
-import { getDrafts } from './onboarding';
+import { loadContext } from './planContext';
+import { regenerateFuture } from './schedule';
+import { toDateKey, type DateKey } from '../lib/schedule';
 
 type Row = { id: string; environment_id: string | null; plan_json: string; plan_version: number };
 export type EditResult =
@@ -18,24 +18,13 @@ export type Origin = 'user' | 'ai';
 
 const sameIssue = (a: Issue, b: Issue) => a.code === b.code && a.message === b.message;
 
-/** Contexto de validación del perfil (equipo del entorno del plan, limitaciones, días…); null si el onboarding está incompleto. */
-async function loadContext(db: Db, profileId: string, environmentId: string | null): Promise<PlanContext | null> {
-  const drafts = await getDrafts(db, profileId);
-  const inv = environmentId ? await getInventory(db, environmentId) : {};
-  const have = new Set(Object.entries(inv).filter(([, s]) => s === 'available').map(([id]) => id));
-  const r = inputFromDrafts(drafts, have);
-  if (!('input' in r)) return null;
-  const { limitations, days, minutesPerSession, level } = r.input;
-  return { have, limitations, days, minutesPerSession, level };
-}
-
 const activeRow = (db: Db, profileId: string) => db.getFirstAsync<Row>(
   "SELECT id, environment_id, plan_json, plan_version FROM training_plans WHERE profile_id = ? AND status = 'active'", [profileId]);
 
 /** Escribe una revisión nueva (versión + 1) y registra la operación. Debe llamarse dentro de una transacción. */
 async function commit(
   tx: Db, row: Row, plan: Plan,
-  meta: { operationId: string; type: string; params: unknown; origin: Origin; baseVersion: number; author: 'user' | 'ai'; reason: string | null },
+  meta: { operationId: string; type: string; params: unknown; origin: Origin; baseVersion: number; author: 'user' | 'ai'; reason: string | null; today?: DateKey },
 ) {
   const version = row.plan_version + 1;
   const json = JSON.stringify(plan);
@@ -49,6 +38,8 @@ async function commit(
     'INSERT INTO plan_operations (operation_id, plan_id, type, params_json, origin, base_version, applied_revision, created_at) VALUES (?,?,?,?,?,?,?,?)',
     [meta.operationId, row.id, meta.type, JSON.stringify(meta.params), meta.origin, meta.baseVersion, version, now],
   );
+  // «Todas las semanas»: las instancias futuras sin cambios manuales siguen a la plantilla nueva.
+  await regenerateFuture(tx, row.id, plan, version, meta.today ?? toDateKey());
   return version;
 }
 
@@ -63,7 +54,7 @@ async function alreadyApplied(tx: Db, operationId: string): Promise<number | nul
  */
 export async function applyPlanOperation(
   db: Db, profileId: string,
-  req: { operationId: string; op: Operation; baseVersion: number; origin?: Origin; reason?: string },
+  req: { operationId: string; op: Operation; baseVersion: number; origin?: Origin; reason?: string; today?: DateKey },
 ): Promise<EditResult> {
   const parsed = operationSchema.safeParse(req.op);
   if (!parsed.success) return { status: 'rejected', reason: 'Operación inválida', issues: [] };
@@ -98,7 +89,7 @@ export async function applyPlanOperation(
     }
     const version = await commit(tx, row, after, {
       operationId: req.operationId, type: parsed.data.type, params: parsed.data, origin, baseVersion: req.baseVersion,
-      author: origin, reason: req.reason ?? null,
+      author: origin, reason: req.reason ?? null, today: req.today,
     });
     result = { status: 'applied', plan: after, version, warnings };
   });
@@ -107,7 +98,7 @@ export async function applyPlanOperation(
 
 /** Restaura una revisión anterior creando una revisión NUEVA (nunca borra historial). «Deshacer» es restaurar la anterior. */
 export async function restoreRevision(
-  db: Db, profileId: string, req: { operationId: string; revision: number; baseVersion: number; reason?: string },
+  db: Db, profileId: string, req: { operationId: string; revision: number; baseVersion: number; reason?: string; today?: DateKey },
 ): Promise<EditResult> {
   let result: EditResult = { status: 'no_plan' };
   await db.withExclusiveTransactionAsync(async (tx) => {
@@ -122,17 +113,17 @@ export async function restoreRevision(
     if (!parsed || !parsed.success) { result = { status: 'rejected', reason: 'Esa versión no existe', issues: [] }; return; }
     const version = await commit(tx, row, parsed.data, {
       operationId: req.operationId, type: 'restore', params: { revision: req.revision }, origin: 'user', baseVersion: req.baseVersion,
-      author: 'user', reason: req.reason ?? `Restaurada la versión ${req.revision}`,
+      author: 'user', reason: req.reason ?? `Restaurada la versión ${req.revision}`, today: req.today,
     });
     result = { status: 'applied', plan: parsed.data, version, warnings: [] };
   });
   return result;
 }
 
-export const undoLast = (db: Db, profileId: string, req: { operationId: string; baseVersion: number }): Promise<EditResult> =>
+export const undoLast = (db: Db, profileId: string, req: { operationId: string; baseVersion: number; today?: DateKey }): Promise<EditResult> =>
   req.baseVersion <= 1
     ? Promise.resolve({ status: 'rejected', reason: 'No hay nada que deshacer', issues: [] })
-    : restoreRevision(db, profileId, { operationId: req.operationId, revision: req.baseVersion - 1, baseVersion: req.baseVersion, reason: 'Deshacer el último cambio' });
+    : restoreRevision(db, profileId, { operationId: req.operationId, revision: req.baseVersion - 1, baseVersion: req.baseVersion, reason: 'Deshacer el último cambio', today: req.today });
 
 /** Plan activo con su versión (ETag) para editar. */
 export async function getActivePlanState(db: Db, profileId: string): Promise<{ plan: Plan; version: number } | null> {

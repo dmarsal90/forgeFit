@@ -2,10 +2,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { getDrafts } from '../../db/onboarding';
 import { getActivePlan } from '../../db/plans';
+import { getNextInstance } from '../../db/schedule';
 import { useApp } from '../../features/AppContext';
 import { describeItem } from '../../features/PlanView';
 import { onboardingProgress, WEEKDAYS } from '../../lib/onboarding';
-import { nextSession, todayIndex, type Plan } from '../../lib/plan';
+import type { Plan } from '../../lib/plan';
+import { toDateKey, weekdayOf, type Instance } from '../../lib/schedule';
 import { Button, Card, EmptyState, Screen, Text } from '../../ui/components';
 import { space } from '../../ui/tokens';
 
@@ -13,24 +15,25 @@ export default function Home() {
   const { db, profile } = useApp();
   const [progress, setProgress] = useState<ReturnType<typeof onboardingProgress> | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [next, setNext] = useState<Instance | null>(null);
 
   // Al volver a Inicio (p. ej. tras guardar o aceptar un plan) se relee el estado del perfil activo.
   useFocusEffect(useCallback(() => {
     if (!profile) return;
     getDrafts(db, profile.id).then((d) => setProgress(onboardingProgress(d))).catch(() => setProgress(null));
     getActivePlan(db, profile.id).then(setPlan).catch(() => setPlan(null));
+    getNextInstance(db, profile.id).then(setNext).catch(() => setNext(null));
   }, [db, profile]));
 
   const started = !!progress && progress.done > 0;
   const ready = !!progress && progress.done === progress.total;
-  const next = plan ? nextSession(plan, todayIndex()) : null;
 
   return (
     <Screen tab>
       <Text variant="display">Hola{profile ? `, ${profile.alias}` : ''}</Text>
-      {plan && next ? (
+      {plan && next?.session ? (
         <Card style={{ gap: space.sm }}>
-          <Text variant="caption" muted>{next.isToday ? 'Hoy' : `Próxima sesión · ${WEEKDAYS[next.session.day]}`}</Text>
+          <Text variant="caption" muted>{next.date === toDateKey() ? 'Hoy' : `Próxima sesión · ${WEEKDAYS[weekdayOf(next.date)]} ${Number(next.date.slice(8))}`}</Text>
           <Text variant="title">{next.session.name}</Text>
           {next.session.blocks.flatMap((b) => b.items).slice(0, 5).map((it, i) => (
             <Text key={i} muted>{describeItem(it).name}</Text>
