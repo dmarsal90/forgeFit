@@ -53,4 +53,30 @@ export const migrations: string[] = [
      created_at TEXT NOT NULL
    );
    CREATE UNIQUE INDEX one_active_plan_per_profile ON training_plans(profile_id) WHERE status = 'active';`,
+  // V8-A1: revisiones inmutables del plan, versión (ETag) y registro idempotente de operaciones.
+  `ALTER TABLE training_plans ADD COLUMN plan_version INTEGER NOT NULL DEFAULT 1;
+   CREATE TABLE plan_revisions (
+     id TEXT PRIMARY KEY NOT NULL,
+     plan_id TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+     revision INTEGER NOT NULL,
+     author TEXT NOT NULL CHECK (author IN ('engine','user','ai')),
+     reason TEXT,
+     definition_json TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     UNIQUE (plan_id, revision)
+   );
+   -- Inmutable: una revisión no se edita nunca (el borrado solo ocurre en cascada al eliminar el perfil).
+   CREATE TRIGGER plan_revisions_immutable BEFORE UPDATE ON plan_revisions BEGIN SELECT RAISE(ABORT, 'plan_revisions es inmutable'); END;
+   CREATE TABLE plan_operations (
+     operation_id TEXT PRIMARY KEY NOT NULL,
+     plan_id TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+     type TEXT NOT NULL,
+     params_json TEXT NOT NULL,
+     origin TEXT NOT NULL CHECK (origin IN ('user','ai')),
+     base_version INTEGER NOT NULL,
+     applied_revision INTEGER NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   INSERT INTO plan_revisions (id, plan_id, revision, author, reason, definition_json, created_at)
+     SELECT lower(hex(randomblob(16))), id, 1, 'engine', NULL, plan_json, created_at FROM training_plans;`,
 ];

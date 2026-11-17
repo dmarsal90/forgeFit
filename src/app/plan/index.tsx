@@ -3,10 +3,9 @@ import { Pressable } from 'react-native';
 import { PlanView } from '../../features/PlanView';
 import { usePlanEditor } from '../../features/usePlanEditor';
 import { Button, Screen, Text } from '../../ui/components';
-import { colors } from '../../ui/tokens';
 
 export default function ActivePlan() {
-  const { plan, allowedDays, move, error } = usePlanEditor();
+  const { plan } = usePlanEditor();
 
   return (
     <Screen>
@@ -17,9 +16,8 @@ export default function ActivePlan() {
       {plan === undefined ? <Text muted>Cargando…</Text> : plan === null ? <Text muted>Aún no tienes un plan guardado.</Text> : (
         <>
           <Text muted>{plan.summary}</Text>
-          <Text variant="caption" muted>Puedes cambiar una sesión de día; se guarda al instante.</Text>
-          {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
-          <PlanView plan={plan} onMove={move} allowedDays={allowedDays} />
+          <PlanView plan={plan} />
+          <Button label="Planificar semana" icon="calendar-outline" onPress={() => router.push('/planner')} />
         </>
       )}
       <Button variant="secondary" label={plan ? 'Rehacer plan' : 'Generar plan'} onPress={() => router.push('/plan/proposal')} />
