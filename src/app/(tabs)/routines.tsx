@@ -20,7 +20,7 @@ export default function RoutinesScreen() {
 
   const today = todayIndex();
   return (
-    <Screen>
+    <Screen tab>
       <Text variant="title">Rutinas</Text>
       {plan === undefined ? null : plan === null ? (
         <EmptyState icon="calendar-outline" title="Aún no tienes un plan" body="Genera uno con tus respuestas y verás aquí tus días de entrenamiento y descanso.">
