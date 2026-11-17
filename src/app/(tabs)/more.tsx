@@ -6,6 +6,7 @@ export default function MoreScreen() {
     <Screen tab>
       <Text variant="title">Más</Text>
       <Button label="Perfiles" icon="people-outline" variant="secondary" onPress={() => router.push('/profiles')} />
+      <Button label="Historial del plan" icon="time-outline" variant="secondary" onPress={() => router.push('/plan/history')} />
       <Text variant="caption" muted>Entornos, reloj y datos llegarán en fases posteriores.</Text>
     </Screen>
   );
