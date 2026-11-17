@@ -10,20 +10,21 @@ import { colors, MIN_TOUCH, radius, space } from '../ui/tokens';
 export type DropHint = 'none' | 'move' | 'swap';
 
 /** Fila de un día (sesión o descanso). Pulsación larga + arrastre vertical; pulsar abre las acciones por botones (alternativa accesible). */
-export function PlannerRow({ day, session, today, selected, dragOffset, hint, onSelect, onDragStart, onDragMove, onDragEnd }: {
-  day: number; session?: PlanSession; today: boolean; selected: boolean; dragOffset: number | null; hint: DropHint;
+export function PlannerRow({ day, dateNumber, past, session, today, selected, dragOffset, hint, onSelect, onDragStart, onDragMove, onDragEnd }: {
+  day: number; dateNumber: number; past: boolean; session?: PlanSession; today: boolean; selected: boolean; dragOffset: number | null; hint: DropHint;
   onSelect: () => void; onDragStart: () => void; onDragMove: (translationY: number) => void; onDragEnd: (translationY: number) => void;
 }) {
   const dragging = dragOffset !== null;
   const pan = usePanGesture({
     runOnJS: true,
+    enabled: !past,
     activateAfterLongPress: 220,
     onActivate: () => onDragStart(),
     onUpdate: (e) => onDragMove(e.translationY),
     onDeactivate: (e) => onDragEnd(e.translationY),
   });
   const focus = session ? focusOf(session).join(' · ') : 'Recuperación';
-  const label = `${WEEKDAYS[day]}: ${session ? `${session.name}, ${focus}` : 'descanso'}${today ? ', hoy' : ''}`;
+  const label = `${WEEKDAYS[day]} ${dateNumber}: ${session ? `${session.name}, ${focus}` : 'descanso'}${today ? ', hoy' : ''}${past ? ', pasado' : ''}`;
 
   return (
     <GestureDetector gesture={pan}>
@@ -34,18 +35,18 @@ export function PlannerRow({ day, session, today, selected, dragOffset, hint, on
         }}
       >
         <Pressable
-          onPress={onSelect} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }}
+          onPress={onSelect} disabled={past} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected, disabled: past }}
           accessibilityHint="Abre las acciones para mover, intercambiar o duplicar. También puedes mantener pulsado y arrastrar."
           style={{
             minHeight: ROW_HEIGHT, borderRadius: radius.card, flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.md,
-            backgroundColor: session ? colors.surface : colors.surfaceAlt,
+            backgroundColor: session ? colors.surface : colors.surfaceAlt, opacity: past ? 0.5 : 1,
             borderWidth: hint !== 'none' || selected || dragging ? 1.5 : 1,
             borderColor: hint !== 'none' || selected || dragging ? colors.accent : colors.border,
             borderStyle: hint === 'move' ? 'dashed' : 'solid',
           }}
         >
-          <View style={{ minWidth: 52, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: today ? colors.accent : colors.border }}>
-            <Text variant="caption" style={{ color: today ? colors.onAccent : colors.text }}>{WEEKDAYS[day].slice(0, 3)}</Text>
+          <View style={{ minWidth: 64, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: today ? colors.accent : colors.border }}>
+            <Text variant="caption" style={{ color: today ? colors.onAccent : colors.text }}>{WEEKDAYS[day].slice(0, 3)} {dateNumber}</Text>
           </View>
           <Ionicons name={session ? 'barbell-outline' : 'bed-outline'} size={26} color={session ? colors.accent : colors.textMuted} />
           <View style={{ flex: 1 }}>

@@ -1,6 +1,7 @@
 import { findVariant } from './exercises';
 import { LIMITATION_LABEL } from './onboarding';
 import type { Plan, PlanSession } from './plan';
+import { weekdayOf, type Instance } from './schedule';
 
 /** Alto de cada fila del planificador (fila + separación): la posición del dedo decide el día de destino. */
 export const ROW = 72;
@@ -34,4 +35,12 @@ export function targetsFor(plan: Plan, from: number, kind: ActionKind): number[]
 export function dropAction(plan: Plan, from: number, to: number): 'none' | 'move' | 'swap' {
   if (from === to) return 'none';
   return plan.sessions.some((s) => s.day === to) ? 'swap' : 'move';
+}
+
+/** Las sesiones de una semana de instancias, expresadas por día de la semana (0 = lunes) para reutilizar la lógica del planificador. */
+export function weekSessions(rows: Instance[]): Plan {
+  return {
+    schemaVersion: 1, mode: 'local',
+    sessions: rows.filter((r) => r.session).map((r) => ({ ...(r.session as PlanSession), day: weekdayOf(r.date) })),
+  };
 }

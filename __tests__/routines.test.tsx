@@ -40,7 +40,7 @@ it('con plan muestra la semana completa con los descansos y el detalle de las se
   await render(<Routines />);
   expect(await screen.findByText('Tu semana')).toBeTruthy();
   expect(screen.getAllByText('Descanso')).toHaveLength(4); // martes, jueves, sábado y domingo
-  expect(screen.getByLabelText(/^Sábado: descanso/)).toBeTruthy();
+  expect(screen.getByLabelText(/^Sábado \d+: descanso/)).toBeTruthy();
   expect(screen.getAllByText('Flexiones').length).toBeGreaterThan(0);
   expect(screen.getByText('Rehacer plan')).toBeTruthy();
 });

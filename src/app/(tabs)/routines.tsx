@@ -3,16 +3,18 @@ import { View } from 'react-native';
 import { useApp } from '../../features/AppContext';
 import { PlanView } from '../../features/PlanView';
 import { usePlanEditor } from '../../features/usePlanEditor';
+import { useWeek } from '../../features/useSchedule';
 import { WEEKDAYS } from '../../lib/onboarding';
-import { todayIndex } from '../../lib/plan';
+import { toDateKey } from '../../lib/schedule';
 import { Button, Card, EmptyState, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 export default function RoutinesScreen() {
   const { profile } = useApp();
   const { plan } = usePlanEditor();
+  const week = useWeek();
 
-  const today = todayIndex();
+  const today = toDateKey();
   return (
     <Screen tab>
       <Text variant="title">Rutinas</Text>
@@ -24,12 +26,14 @@ export default function RoutinesScreen() {
         <>
           <Card style={{ gap: space.sm }}>
             <Text variant="subtitle">Tu semana</Text>
-            {WEEKDAYS.map((name, day) => {
-              const s = plan.sessions.find((x) => x.day === day);
+            {(week.rows ?? []).map((r) => {
+              const name = WEEKDAYS[(new Date(`${r.date}T00:00:00Z`).getUTCDay() + 6) % 7];
+              const isToday = r.date === today;
+              const num = Number(r.date.slice(8));
               return (
-                <View key={name} style={{ flexDirection: 'row', justifyContent: 'space-between' }} accessible accessibilityLabel={`${name}: ${s ? s.name : 'descanso'}${day === today ? ', hoy' : ''}`}>
-                  <Text style={{ color: day === today ? colors.accent : colors.text }}>{name}{day === today ? ' · hoy' : ''}</Text>
-                  <Text muted={!s}>{s ? s.name : 'Descanso'}</Text>
+                <View key={r.date} style={{ flexDirection: 'row', justifyContent: 'space-between' }} accessible accessibilityLabel={`${name} ${num}: ${r.session ? r.session.name : 'descanso'}${isToday ? ', hoy' : ''}`}>
+                  <Text style={{ color: isToday ? colors.accent : colors.text }}>{name} {num}{isToday ? ' · hoy' : ''}</Text>
+                  <Text muted={!r.session}>{r.session ? r.session.name : 'Descanso'}</Text>
                 </View>
               );
             })}
