@@ -199,9 +199,9 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
           <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} />
         )}
       />
-      <View style={{ gap: space.sm, paddingTop: space.md }}>
-        <Button label="Continuar" icon="arrow-forward" onPress={onNext} />
-        <Button variant="secondary" label="Guardar y salir" onPress={onExit} />
+      <View style={{ flexDirection: 'row', gap: space.sm, paddingTop: space.md }}>
+        <View style={{ flex: 1 }}><Button variant="secondary" label="Guardar y salir" onPress={onExit} /></View>
+        <View style={{ flex: 1 }}><Button label="Continuar" icon="arrow-forward" onPress={onNext} /></View>
       </View>
     </Screen>
   );

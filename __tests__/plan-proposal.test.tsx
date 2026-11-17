@@ -62,3 +62,15 @@ it('con datos y equipo muestra la propuesta y al aceptar guarda el plan activo',
   expect(saved?.sessions.length).toBe(3);
   expect(saved?.mode).toBe('local');
 });
+
+it('permite mover un día antes de aceptar y se guarda el plan con el cambio', async () => {
+  const { db, p } = await withProfile(complete, ['dumbbells_fixed_hex', 'bench_adjustable', 'pullup_bar_multigrip', 'leg_press_45_plate']);
+  await render(<Proposal />);
+  await fireEvent.press((await screen.findAllByText('Cambiar de día'))[0]); // sesión del lunes
+  await fireEvent.press(screen.getByLabelText(/^Miércoles, intercambiar con/));
+  await fireEvent.press(screen.getByText('Aceptar plan'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
+  const saved = await getActivePlan(db, p.id);
+  expect(saved?.sessions.map((s) => s.day)).toEqual([0, 2, 4]);
+  expect(saved?.sessions.map((s) => s.name)).toEqual(['Tracción', 'Empuje', 'Piernas']); // lunes y miércoles intercambiados
+});

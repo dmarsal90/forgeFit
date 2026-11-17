@@ -1,20 +1,12 @@
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { Pressable } from 'react-native';
-import { getActivePlan } from '../../db/plans';
-import { useApp } from '../../features/AppContext';
 import { PlanView } from '../../features/PlanView';
-import type { Plan } from '../../lib/plan';
+import { usePlanEditor } from '../../features/usePlanEditor';
 import { Button, Screen, Text } from '../../ui/components';
+import { colors } from '../../ui/tokens';
 
 export default function ActivePlan() {
-  const { db, profile } = useApp();
-  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
-
-  useEffect(() => {
-    if (!profile) return;
-    getActivePlan(db, profile.id).then(setPlan).catch(() => setPlan(null));
-  }, [db, profile]);
+  const { plan, allowedDays, move, error } = usePlanEditor();
 
   return (
     <Screen>
@@ -25,7 +17,9 @@ export default function ActivePlan() {
       {plan === undefined ? <Text muted>Cargando…</Text> : plan === null ? <Text muted>Aún no tienes un plan guardado.</Text> : (
         <>
           <Text muted>{plan.summary}</Text>
-          <PlanView plan={plan} />
+          <Text variant="caption" muted>Puedes cambiar una sesión de día; se guarda al instante.</Text>
+          {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
+          <PlanView plan={plan} onMove={move} allowedDays={allowedDays} />
         </>
       )}
       <Button variant="secondary" label={plan ? 'Rehacer plan' : 'Generar plan'} onPress={() => router.push('/plan/proposal')} />

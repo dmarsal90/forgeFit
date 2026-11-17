@@ -45,3 +45,9 @@ export async function hasConsent(db: Db, profileId: string, kind: string): Promi
   );
   return r !== null;
 }
+
+/** Días de entrenamiento que el perfil indicó en la etapa 4; null si aún no la completó. */
+export async function getAvailableDays(db: Db, profileId: string): Promise<number[] | null> {
+  const days = ((await getDrafts(db, profileId))[4] as { days?: unknown } | undefined)?.days;
+  return Array.isArray(days) && days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6) ? (days as number[]) : null;
+}

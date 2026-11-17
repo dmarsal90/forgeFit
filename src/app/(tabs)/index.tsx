@@ -26,7 +26,7 @@ export default function Home() {
   const next = plan ? nextSession(plan, todayIndex()) : null;
 
   return (
-    <Screen>
+    <Screen tab>
       <Text variant="display">Hola{profile ? `, ${profile.alias}` : ''}</Text>
       {plan && next ? (
         <Card style={{ gap: space.sm }}>

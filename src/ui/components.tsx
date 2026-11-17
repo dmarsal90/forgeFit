@@ -12,14 +12,18 @@ export function Text({ variant = 'body', muted, style, ...props }: React.Compone
   return <RNText {...props} style={[type[variant], { color: muted ? colors.textMuted : colors.text, fontVariant: ['tabular-nums'] }, style]} />;
 }
 
-export function Screen({ children, scroll = true, style }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle> }) {
+/** `tab`: dentro de las pestañas la barra inferior ya respeta el área segura, así que no se suma el margen de abajo. */
+export function Screen({ children, scroll = true, style, tab }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle>; tab?: boolean }) {
   const insets = useSafeAreaInsets();
-  const pad = { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.lg, paddingHorizontal: space.lg };
-  if (!scroll) return <View style={[s.screen, pad, style]}>{children}</View>;
+  // El área se recorta a la zona segura: nada se dibuja bajo la barra de estado ni la de navegación.
+  const frame = { paddingTop: insets.top, paddingBottom: tab ? 0 : insets.bottom };
+  if (!scroll) return <View style={[s.screen, frame, { padding: space.lg }, style]}>{children}</View>;
   return (
-    <ScrollView style={s.screen} contentContainerStyle={[pad, { flexGrow: 1, gap: space.lg }, style]} keyboardShouldPersistTaps="handled">
-      {children}
-    </ScrollView>
+    <View style={[s.screen, frame]}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[{ padding: space.lg, flexGrow: 1, gap: space.lg }, style]} keyboardShouldPersistTaps="handled">
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 

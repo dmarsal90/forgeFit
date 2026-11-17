@@ -7,6 +7,7 @@ import { saveActivePlan } from '../../db/plans';
 import { useApp } from '../../features/AppContext';
 import { PlanView } from '../../features/PlanView';
 import { onboardingProgress } from '../../lib/onboarding';
+import { moveSession, type Plan } from '../../lib/plan';
 import { generatePlan, inputFromDrafts } from '../../lib/planEngine';
 import { Button, Card, Choice, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
@@ -19,6 +20,7 @@ export default function Proposal() {
   const { db, profile } = useApp();
   const [source, setSource] = useState<Source>({ status: 'loading' });
   const [have, setHave] = useState<Set<string> | null>(null);
+  const [moved, setMoved] = useState<Plan | null>(null); // plan con los días que el usuario cambió a mano
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +47,7 @@ export default function Proposal() {
     getInventory(db, envId).then((inv) => {
       if (live) setHave(new Set(Object.entries(inv).filter(([, s]) => s === 'available').map(([id]) => id)));
     }).catch(() => live && setError('No se pudo leer tu equipamiento.'));
-    return () => { live = false; setHave(null); };
+    return () => { live = false; setHave(null); setMoved(null); };
   }, [db, envId]);
 
   const result = useMemo(() => {
@@ -57,9 +59,9 @@ export default function Proposal() {
   const accept = useCallback(async () => {
     if (!profile || !envId || !result || result.status !== 'ok') return;
     setSaving(true);
-    try { await saveActivePlan(db, profile.id, result.plan, envId); router.replace('/(tabs)'); }
+    try { await saveActivePlan(db, profile.id, moved ?? result.plan, envId); router.replace('/(tabs)'); }
     catch { setError('No se pudo guardar el plan. Inténtalo de nuevo.'); setSaving(false); }
-  }, [db, profile, envId, result]);
+  }, [db, profile, envId, result, moved]);
 
   const back = (
     <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={() => router.replace('/(tabs)')} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
@@ -113,7 +115,10 @@ export default function Proposal() {
               {result.plan.warnings.map((w) => <Text key={w} variant="caption" muted>• {w}</Text>)}
             </Card>
           ) : null}
-          <PlanView plan={result.plan} />
+          <PlanView
+            plan={moved ?? result.plan} allowedDays={source.drafts[4] ? ((source.drafts[4] as { days?: number[] }).days ?? undefined) : undefined}
+            onMove={(from, to) => setMoved(moveSession(moved ?? result.plan, from, to))}
+          />
           <Text variant="caption" muted>Plan generado en tu dispositivo con tu equipo confirmado. Es una propuesta: no sustituye el consejo de un profesional y puedes rehacerlo cuando quieras.</Text>
           {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
           <Button label="Aceptar plan" icon="checkmark" disabled={saving} onPress={accept} />

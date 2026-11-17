@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { createProfile } from '../../db/profiles';
 import { useApp } from '../../features/AppContext';
+import { ModelHero } from '../../features/ModelHero';
 import { profileInputSchema } from '../../lib/profile';
 import { Button, Card, Choice, Field, Screen, Text } from '../../ui/components';
 import { space } from '../../ui/tokens';
@@ -50,10 +51,14 @@ export default function CreateProfile() {
 
       <Field label="Nombre o alias" value={alias} onChangeText={setAlias} error={errors.alias} autoCapitalize="words" maxLength={40} />
 
+      <ModelHero model={model} />
+
       <View style={{ gap: space.sm }} accessibilityRole="radiogroup">
         <Text variant="subtitle">Modelo de visualización 3D (opcional)</Text>
-        <Choice label="Masculino" selected={model === 'male'} onPress={() => setModel('male')} />
-        <Choice label="Femenino" selected={model === 'female'} onPress={() => setModel('female')} />
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <View style={{ flex: 1 }}><Choice label="Masculino" selected={model === 'male'} onPress={() => setModel('male')} /></View>
+          <View style={{ flex: 1 }}><Choice label="Femenino" selected={model === 'female'} onPress={() => setModel('female')} /></View>
+        </View>
         {model ? <Button variant="ghost" label="Quitar selección" onPress={() => setModel(undefined)} /> : null}
         <Text variant="caption" muted>Es solo la figura que verás en pantalla. No afecta a tu rutina ni a tus capacidades.</Text>
       </View>

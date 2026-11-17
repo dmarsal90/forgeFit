@@ -36,3 +36,13 @@ export function nextSession(plan: Plan, today: number): { session: PlanSession; 
 
 /** Lunes = 0, a partir de Date.getDay() (domingo = 0). */
 export const todayIndex = (d = new Date()) => (d.getDay() + 6) % 7;
+
+/** Mueve una sesión a otro día; si ese día ya tiene sesión, se intercambian (nunca hay dos el mismo día). */
+export function moveSession(plan: Plan, fromDay: number, toDay: number): Plan {
+  const mover = plan.sessions.find((s) => s.day === fromDay);
+  if (!mover) throw new Error(`No hay sesión el día ${fromDay}`);
+  if (!Number.isInteger(toDay) || toDay < 0 || toDay > 6) throw new Error(`Día inválido: ${toDay}`);
+  if (fromDay === toDay) return plan;
+  const sessions = plan.sessions.map((s) => (s.day === fromDay ? { ...s, day: toDay } : s.day === toDay ? { ...s, day: fromDay } : s));
+  return { ...plan, sessions: sessions.sort((a, b) => a.day - b.day) };
+}
