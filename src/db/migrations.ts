@@ -79,4 +79,31 @@ export const migrations: string[] = [
    );
    INSERT INTO plan_revisions (id, plan_id, revision, author, reason, definition_json, created_at)
      SELECT lower(hex(randomblob(16))), id, 1, 'engine', NULL, plan_json, created_at FROM training_plans;`,
+  // V8-A2: calendario con fechas (instancias derivadas de la plantilla) y registro de reprogramaciones.
+  // Fechas = días de calendario locales «AAAA-MM-DD» (sin zona): viajar no corre ni duplica días.
+  `CREATE TABLE scheduled_sessions (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     plan_id TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+     date TEXT NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+     kind TEXT NOT NULL CHECK (kind IN ('training','rest')),
+     status TEXT NOT NULL CHECK (status IN ('scheduled','completed','skipped')),
+     origin TEXT NOT NULL CHECK (origin IN ('template','override')),
+     session_json TEXT,
+     revision INTEGER NOT NULL,
+     UNIQUE (plan_id, date),
+     CHECK ((kind = 'training') = (session_json IS NOT NULL))
+   );
+   CREATE INDEX scheduled_sessions_profile_date ON scheduled_sessions (profile_id, date);
+   CREATE TABLE session_reschedules (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     plan_id TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+     operation_id TEXT NOT NULL,
+     kind TEXT NOT NULL CHECK (kind IN ('move','swap','duplicate','undo')),
+     from_date TEXT NOT NULL,
+     to_date TEXT NOT NULL,
+     before_json TEXT NOT NULL,
+     at TEXT NOT NULL
+   );`,
 ];

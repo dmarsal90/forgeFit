@@ -47,7 +47,7 @@ export function buildInstances(plan: Plan, from: DateKey, to: DateKey, revision:
 }
 
 export class ScheduleError extends Error {
-  constructor(public code: 'no_session' | 'destination_occupied' | 'completed' | 'same_day' | 'unknown_date', message: string) { super(message); }
+  constructor(public code: 'no_session' | 'destination_occupied' | 'completed' | 'same_day' | 'unknown_date' | 'past', message: string) { super(message); }
 }
 export type ScheduleOp = { type: 'move' | 'swap' | 'duplicate'; from: DateKey; to: DateKey };
 
