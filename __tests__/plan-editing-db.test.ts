@@ -1,7 +1,7 @@
 import { migrate } from '../src/db';
 import { migrations } from '../src/db/migrations';
 import { saveDraft } from '../src/db/onboarding';
-import { applyPlanOperation, getActivePlanState, listRevisions, restoreRevision, undoLast } from '../src/db/planEditing';
+import { applyPlanOperation, getActivePlanState, getRevisionPlan, listRevisions, restoreRevision, undoLast } from '../src/db/planEditing';
 import { saveActivePlan } from '../src/db/plans';
 import { createProfile, deleteProfile } from '../src/db/profiles';
 import type { Plan } from '../src/lib/plan';
@@ -94,6 +94,13 @@ describe('validación al aplicar', () => {
     const r = await applyPlanOperation(db, a.id, swap('o', 1));
     expect(r.status).toBe('applied');
   });
+  it('restaurar no se bloquea por problemas de disponibilidad que el plan ya tenía', async () => {
+    const { db, a } = await withContext(plan([sess(0, 'A', 'leg_press.machine'), sess(2, 'B'), sess(4, 'C')]));
+    await applyPlanOperation(db, a.id, swap('op-1', 1));
+    const r = await restoreRevision(db, a.id, { operationId: 'rest-1', revision: 1, baseVersion: 2 });
+    expect(r.status).toBe('applied');
+    expect(r.status === 'applied' && r.warnings.every((w) => w.severity === 'warning')).toBe(true);
+  });
   it('avisa si el cambio deja días seguidos con los mismos músculos principales', async () => {
     const push = (day: number, name: string) => ({ day, name, blocks: [{ type: 'single' as const, items: [{ ...item('incline_bench_press.db'), sets: 4 }] }] });
     const { db, a } = await withContext(plan([push(0, 'Empuje'), push(2, 'Pecho'), sess(4, 'Piernas', 'bodyweight_squat.floor')]));
@@ -123,6 +130,15 @@ describe('historial', () => {
     expect(r.status === 'applied' && view(r.plan)).toEqual(['0:A', '2:B', '4:C']);
     expect((await listRevisions(db, a.id)).map((x) => x.revision)).toEqual([4, 3, 2, 1]);
     expect(await restoreRevision(db, a.id, { operationId: 'rest-2', revision: 99, baseVersion: 4 })).toMatchObject({ status: 'rejected' });
+  });
+  it('restaurar es idempotente por operationId y getRevisionPlan devuelve la definición antigua', async () => {
+    const { db, a } = await setup();
+    await applyPlanOperation(db, a.id, swap('op-1', 1));
+    expect(view((await getRevisionPlan(db, a.id, 1))!)).toEqual(['0:A', '2:B', '4:C']);
+    expect(await getRevisionPlan(db, a.id, 99)).toBeNull();
+    await restoreRevision(db, a.id, { operationId: 'rest-1', revision: 1, baseVersion: 2 });
+    expect(await restoreRevision(db, a.id, { operationId: 'rest-1', revision: 1, baseVersion: 2 })).toMatchObject({ status: 'duplicate' });
+    expect((await listRevisions(db, a.id)).map((x) => x.revision)).toEqual([3, 2, 1]);
   });
   it('las revisiones son inmutables', async () => {
     const { db, a } = await setup();
