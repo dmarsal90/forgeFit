@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import CreateProfile from '../src/app/onboarding/profile';
-import { heroTargets } from '../src/lib/hero';
+import { GHOST, heroTargets } from '../src/lib/hero';
 
 jest.mock('react-native-reanimated', () => {
   const { Image } = require('react-native');
@@ -19,22 +19,23 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('../src/features/AppContext', () => ({ useApp: () => ({ db: {}, refresh: jest.fn() }) }));
 
 describe('heroTargets', () => {
-  it('sin elegir se ven los dos modelos', () => {
-    expect(heroTargets(undefined)).toMatchObject({ both: 1, male: 0, woman: 0 });
+  it('sin elegir se ven los dos modelos, sin fantasmas', () => {
+    expect(heroTargets(undefined)).toEqual({ both: 1, male: 0, ghostWoman: 0, female: 0 });
   });
-  it('al elegir hombre solo se ve el hombre', () => {
-    expect(heroTargets('male')).toMatchObject({ both: 0, male: 1, woman: 0 });
+  it('al elegir hombre se enfatiza el hombre y la mujer queda como fantasma tenue', () => {
+    const t = heroTargets('male');
+    expect(t).toMatchObject({ both: 0, male: 1, female: 0 });
+    expect(t.ghostWoman).toBe(GHOST);
+    expect(GHOST).toBeGreaterThan(0);
+    expect(GHOST).toBeLessThan(0.5);
   });
-  it('al elegir mujer solo se ve la mujer, ampliada y centrada', () => {
-    const t = heroTargets('female');
-    expect(t).toMatchObject({ both: 0, male: 0, woman: 1 });
-    expect(t.womanScale).toBeGreaterThan(1);
-    expect(t.womanShift).toBeLessThan(0);
+  it('al elegir mujer se enfatiza la mujer (la capa ya incluye al hombre difuminado)', () => {
+    expect(heroTargets('female')).toEqual({ both: 0, male: 0, ghostWoman: 0, female: 1 });
   });
-  it('en cada estado hay exactamente una capa visible', () => {
+  it('en cada estado hay una sola capa principal opaca', () => {
     for (const m of [undefined, 'male', 'female'] as const) {
       const t = heroTargets(m);
-      expect(t.both + t.male + t.woman).toBe(1);
+      expect(t.both + t.male + t.female).toBe(1);
     }
   });
 });
