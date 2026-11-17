@@ -17,12 +17,13 @@ export function Screen({ children, scroll = true, style, tab }: { children: Reac
   const insets = useSafeAreaInsets();
   // El área se recorta a la zona segura: nada se dibuja bajo la barra de estado ni la de navegación.
   // shortcut: con edge-to-edge el inset inferior llega a 0 en algunos Android y la barra de navegación tapa el último botón; mínimo 48 dp. Revisar si se ajusta el inset de la ventana.
-  const frame = { paddingTop: insets.top, paddingBottom: tab ? 0 : Math.max(insets.bottom, 48) };
-  if (!scroll) return <View style={[s.screen, frame, { padding: space.lg }, style]}>{children}</View>;
+  const bottom = tab ? 0 : Math.max(insets.bottom, 48);
+  if (!scroll) return <View style={[s.screen, { paddingTop: insets.top, paddingBottom: bottom }, { padding: space.lg }, style]}>{children}</View>;
   // Con edge-to-edge Android no redimensiona solo: sin el padding el teclado tapa los botones.
+  // KeyboardAvoidingView sobrescribe su paddingBottom, así que el margen inferior va dentro del scroll.
   return (
-    <KeyboardAvoidingView style={[s.screen, frame]} behavior="padding">
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={[{ padding: space.lg, flexGrow: 1, gap: space.lg }, style]} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={[s.screen, { paddingTop: insets.top }]} behavior="padding">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[{ padding: space.lg, paddingBottom: space.lg + bottom, flexGrow: 1, gap: space.lg }, style]} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
     </KeyboardAvoidingView>

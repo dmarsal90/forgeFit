@@ -138,4 +138,15 @@ export const migrations: string[] = [
      created_at TEXT NOT NULL,
      UNIQUE (profile_id, name_key)
    );`,
+  // Fase 3b: atributos cuantitativos opcionales por equipo y entorno (siempre en kg; la unidad lb llega con la calculadora de discos).
+  `CREATE TABLE equipment_attributes (
+     environment_id TEXT NOT NULL REFERENCES training_environments(id) ON DELETE CASCADE,
+     equipment_id TEXT NOT NULL,
+     min_kg REAL CHECK (min_kg IS NULL OR min_kg >= 0),
+     max_kg REAL CHECK (max_kg IS NULL OR max_kg >= 0),
+     step_kg REAL CHECK (step_kg IS NULL OR step_kg > 0),
+     bar_kg REAL CHECK (bar_kg IS NULL OR bar_kg >= 0),
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (environment_id, equipment_id)
+   );`,
 ];

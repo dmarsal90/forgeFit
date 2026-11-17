@@ -38,9 +38,13 @@ const isOwnItem = async (db: Db, environmentId: string, equipmentId: string) =>
     [equipmentId, environmentId],
   ));
 
+export async function assertKnownItem(db: Db, environmentId: string, equipmentId: string) {
+  if (!known.has(equipmentId) && !(await isOwnItem(db, environmentId, equipmentId))) throw new Error(`Equipo desconocido: ${equipmentId}`);
+}
+
 /** `null` vuelve a «sin indicar» (borra la fila). */
 export async function setItemState(db: Db, environmentId: string, equipmentId: string, state: ItemState | null) {
-  if (!known.has(equipmentId) && !(await isOwnItem(db, environmentId, equipmentId))) throw new Error(`Equipo desconocido: ${equipmentId}`);
+  await assertKnownItem(db, environmentId, equipmentId);
   if (state === null) {
     await db.runAsync('DELETE FROM environment_inventory WHERE environment_id = ? AND equipment_id = ?', [environmentId, equipmentId]);
     return;

@@ -1,3 +1,4 @@
+import { getAttributes, NO_ATTRIBUTES, setAttributes } from '../src/db/equipmentAttributes';
 import { addCustomItem, deleteCustomItem, listCustomItems } from '../src/db/customEquipment';
 import { migrate } from '../src/db';
 import { clearInventory, ensureEnvironment, getInventory, inventorySummary, markNoEquipment, setItemState } from '../src/db/inventory';
@@ -122,5 +123,36 @@ describe('equipo propio', () => {
     await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
     await deleteProfile(db, a.id);
     expect(await db.getAllAsync('SELECT 1 FROM custom_equipment')).toEqual([]);
+  });
+});
+
+describe('atributos de equipo', () => {
+  it('se guardan por entorno, se validan y todo vacío borra la fila', async () => {
+    const { db, a } = await setup();
+    const home = await ensureEnvironment(db, a.id, 'home');
+    const gym = await ensureEnvironment(db, a.id, 'gym');
+    expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(NO_ATTRIBUTES);
+
+    const attrs = { minKg: 2.5, maxKg: 40, stepKg: 2.5, barKg: null };
+    await setAttributes(db, home, 'bench_flat_fixed', attrs);
+    expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(attrs);
+    expect(await getAttributes(db, gym, 'bench_flat_fixed')).toEqual(NO_ATTRIBUTES);
+
+    await expect(setAttributes(db, home, 'bench_flat_fixed', { ...attrs, minKg: 50 })).rejects.toThrow();
+    await expect(setAttributes(db, home, 'bench_flat_fixed', { ...attrs, stepKg: 0 })).rejects.toThrow();
+    await expect(setAttributes(db, home, 'nope', attrs)).rejects.toThrow('desconocido');
+    expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(attrs); // lo inválido no pisa lo guardado
+
+    await setAttributes(db, home, 'bench_flat_fixed', NO_ATTRIBUTES);
+    expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(NO_ATTRIBUTES);
+  });
+
+  it('borrar el equipo propio borra sus atributos', async () => {
+    const { db, a } = await setup();
+    const item = await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
+    const env = await ensureEnvironment(db, a.id, 'home');
+    await setAttributes(db, env, item.id, { minKg: null, maxKg: 100, stepKg: null, barKg: null });
+    await deleteCustomItem(db, a.id, item.id);
+    expect(await db.getAllAsync('SELECT 1 FROM equipment_attributes')).toEqual([]);
   });
 });
