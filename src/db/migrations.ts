@@ -128,4 +128,14 @@ export const migrations: string[] = [
    );
    -- Inmutable: una corrección es un evento nuevo (el borrado solo ocurre en cascada al eliminar el perfil).
    CREATE TRIGGER session_events_immutable BEFORE UPDATE ON session_events BEGIN SELECT RAISE(ABORT, 'session_events es inmutable'); END;`,
+  // Fase 3a: equipo propio por perfil. El catálogo integrado sigue en código; aquí solo lo que añade el usuario.
+  `CREATE TABLE custom_equipment (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     family TEXT NOT NULL,
+     name TEXT NOT NULL,
+     name_key TEXT NOT NULL, -- nombre sin acentos ni mayúsculas (lower() de SQLite solo pliega ASCII)
+     created_at TEXT NOT NULL,
+     UNIQUE (profile_id, name_key)
+   );`,
 ];
