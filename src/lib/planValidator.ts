@@ -13,6 +13,17 @@ export type PlanContext = {
 export type Issue = { severity: 'error' | 'warning'; code: string; path: string; message: string };
 export type Validation = { ok: boolean; issues: Issue[] };
 
+/** Músculos principales trabajados con volumen alto (3+ series) en una sesión. */
+function heavyMuscles(s: PlanSession): Set<string> {
+  const out = new Set<string>();
+  for (const b of s.blocks) for (const it of b.items) {
+    if (it.sets < 3) continue;
+    for (const m of findVariant(it.exerciseVariantId)?.ex.primary ?? []) out.add(m);
+  }
+  return out;
+}
+const RECOVERY_OVERLAP = 2; // músculos principales compartidos en días seguidos a partir de los cuales se avisa
+
 const label = (ids: string[]) => ids.map((i) => LIMITATION_LABEL[i] ?? i).join(', ');
 const WARMUP_MIN = 5;
 const WORK_SECONDS_PER_SET = 40;
@@ -83,6 +94,18 @@ export function validatePlan(input: unknown, ctx: PlanContext): Validation {
       for (const m of ex.secondary) weekly.set(m, (weekly.get(m) ?? 0) + it.sets * 0.5);
     }));
   });
+
+  // Recuperación: días seguidos que cargan los mismos músculos principales (aviso, no bloqueo).
+  const byDay = [...plan.sessions].sort((a, b) => a.day - b.day);
+  for (let i = 1; i < byDay.length; i++) {
+    if (byDay[i].day !== byDay[i - 1].day + 1) continue;
+    const prev = heavyMuscles(byDay[i - 1]);
+    const shared = [...heavyMuscles(byDay[i])].filter((m) => prev.has(m));
+    if (shared.length >= RECOVERY_OVERLAP) {
+      add('warning', 'recovery_overlap', `sessions.${plan.sessions.indexOf(byDay[i])}`,
+        `${byDay[i - 1].name} y ${byDay[i].name} caen en días seguidos y cargan los mismos músculos (${label(shared)}); considera separarlos`);
+    }
+  }
 
   for (const [m, sets] of weekly) {
     if (sets > WEEKLY_SET_LIMIT[ctx.level]) add('error', 'excessive_volume', `volume.${m}`, `Volumen semanal excesivo en ${m} (${sets} series efectivas; máximo ${WEEKLY_SET_LIMIT[ctx.level]})`);
