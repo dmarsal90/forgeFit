@@ -40,7 +40,7 @@ export default function ProgressScreen() {
       <Card style={{ gap: space.xs }}>
         <Text variant="caption" muted>Total</Text>
         <Text variant="subtitle">{completedTotal} {completedTotal === 1 ? 'sesión completada' : 'sesiones completadas'}</Text>
-        {pendingOverdue ? <Text muted>{pendingOverdue} {pendingOverdue === 1 ? 'sesión pendiente' : 'sesiones pendientes'} de semanas anteriores. Puedes retomar tu plan cuando quieras.</Text> : null}
+        {pendingOverdue ? <Text muted>{pendingOverdue} {pendingOverdue === 1 ? 'sesión pendiente' : 'sesiones pendientes'}. Puedes retomar tu plan cuando quieras.</Text> : null}
       </Card>
     </Screen>
   );
