@@ -109,6 +109,7 @@ export default function Planner() {
         </Pressable>
         <Text variant="title">Planificador semanal</Text>
         <Text muted>Mantén pulsado y arrastra, o toca un día para ver las acciones.</Text>
+        <Button variant="secondary" label="Vista mensual" icon="calendar-outline" onPress={() => router.push('/planner/month')} />
 
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
           <Button variant="secondary" label="‹" onPress={() => { reset(); setDone(null); week.shift(-1); }} />
