@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, View } from 'react-native';
 import { CATALOG, CatalogItem, FAMILIES, searchCatalog } from '../data/equipment';
+import { addCustomItem, CUSTOM_PREFIX, deleteCustomItem, listCustomItems } from '../db/customEquipment';
 import { ENV_LABELS, EnvKind, ensureEnvironment, getInventory, ItemState, markNoEquipment, setItemState } from '../db/inventory';
 import { getDrafts } from '../db/onboarding';
 import { Button, Card, Field, Screen, Text } from '../ui/components';
@@ -43,16 +44,18 @@ function IconToggle({ icon, label, active, tint, onPress }: {
 }
 
 // Memoizada: al marcar un equipo solo se repinta su fila, no las ~275 del catálogo.
-const ItemRow = memo(function ItemRow({ item, state, onSet }: {
+const ItemRow = memo(function ItemRow({ item, state, onSet, onDelete }: {
   item: CatalogItem; state: ItemState | undefined; onSet: (id: string, prev: ItemState | null, next: ItemState | null) => void;
+  onDelete?: (id: string) => void;
 }) {
   const prev = state ?? null;
   return (
     <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, marginBottom: space.sm }}>
       <View style={{ flex: 1 }}>
         <Text>{item.es}</Text>
-        <Text variant="caption" muted numberOfLines={1}>{item.en}</Text>
+        {item.en ? <Text variant="caption" muted numberOfLines={1}>{item.en}</Text> : null}
       </View>
+      {onDelete ? <IconToggle icon="trash-outline" label={`Eliminar equipo propio: ${item.es}`} active={false} tint={colors.error} onPress={() => onDelete(item.id)} /> : null}
       <IconToggle icon="checkmark" label={`Tengo: ${item.es}`} active={state === 'available'} tint={colors.accent}
         onPress={() => onSet(item.id, prev, prev === 'available' ? null : 'available')} />
       <IconToggle icon="close" label={`No tengo: ${item.es}`} active={state === 'unavailable'} tint={colors.error}
@@ -60,8 +63,6 @@ const ItemRow = memo(function ItemRow({ item, state, onSet }: {
     </Card>
   );
 });
-
-const FAMILY_TOTAL = Object.fromEntries(FAMILIES.map((f) => [f.id, CATALOG.filter((i) => i.family === f.id).length]));
 
 const GroupHeader = memo(function GroupHeader({ id, label, marked, total, expanded, onToggle }: {
   id: string; label: string; marked: number; total: number; expanded: boolean; onToggle: (id: string) => void;
@@ -93,6 +94,15 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [custom, setCustom] = useState<CatalogItem[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newFamily, setNewFamily] = useState(FAMILIES[0].id);
+  const items = useMemo(() => [...CATALOG, ...custom], [custom]);
+
+  useEffect(() => {
+    listCustomItems(db, profileId).then(setCustom).catch(() => setError('No se pudo cargar tu equipo propio.'));
+  }, [db, profileId]);
 
   useEffect(() => {
     getDrafts(db, profileId).then((d) => {
@@ -124,6 +134,25 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   const toggleGroup = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: !o[id] })), []);
 
+  async function addOwn() {
+    try {
+      const item = await addCustomItem(db, profileId, { name: newName, family: newFamily });
+      setCustom((c) => [...c, item]);
+      setNewName(''); setAdding(false); setOpen((o) => ({ ...o, [item.family]: true })); setError(null);
+    } catch (e) {
+      setError(e instanceof Error && e.message.startsWith('Ya tienes') ? e.message : 'Revisa el nombre (1 a 60 caracteres).');
+    }
+  }
+
+  const removeOwn = useCallback(async (id: string) => {
+    try {
+      await deleteCustomItem(db, profileId, id);
+      setCustom((c) => c.filter((i) => i.id !== id));
+      setInventory((v) => { const c = { ...v }; delete c[id]; return c; });
+      setError(null);
+    } catch { setError('No se pudo eliminar el equipo.'); }
+  }, [db, profileId]);
+
   async function noEquipment() {
     if (!envId) return;
     try { await markNoEquipment(db, envId); setInventory(await getInventory(db, envId)); setError(null); } catch { setError('No se pudo guardar el cambio.'); }
@@ -133,15 +162,16 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
     const out: Row[] = [];
     const searching = query.trim() !== '';
     for (const f of FAMILIES) {
-      const items = searchCatalog(query, f.id);
-      if (!items.length) continue;
+      const found = searchCatalog(query, f.id, items);
+      if (!found.length) continue;
       const expanded = searching || !!open[f.id]; // al buscar se despliegan los grupos con resultados
-      const marked = CATALOG.reduce((n, i) => n + (i.family === f.id && inventory[i.id] ? 1 : 0), 0);
-      out.push({ key: `g_${f.id}`, group: { id: f.id, label: f.label, marked, total: FAMILY_TOTAL[f.id], expanded } });
-      if (expanded) for (const item of items) out.push({ key: item.id, item });
+      const all = items.filter((i) => i.family === f.id);
+      const marked = all.reduce((n, i) => n + (inventory[i.id] ? 1 : 0), 0);
+      out.push({ key: `g_${f.id}`, group: { id: f.id, label: f.label, marked, total: all.length, expanded } });
+      if (expanded) for (const item of found) out.push({ key: item.id, item });
     }
     return out;
-  }, [query, open, inventory]);
+  }, [query, open, inventory, items]);
 
   const counts = useMemo(() => {
     const v = Object.values(inventory);
@@ -170,9 +200,20 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
       <Field label="Buscar equipo" value={query} onChangeText={setQuery} placeholder="Ej.: banco prone, hack squat, polea" autoCorrect={false} />
       <Text variant="caption" muted>✓ Tengo · ✕ No tengo · sin marcar = sin indicar</Text>
       <Text variant="caption" muted accessibilityLiveRegion="polite">
-        {counts.yes} disponibles · {counts.no} no disponibles · {CATALOG.length - counts.yes - counts.no} sin indicar
+        {counts.yes} disponibles · {counts.no} no disponibles · {items.length - counts.yes - counts.no} sin indicar
       </Text>
       <Button variant="secondary" label="No tengo equipamiento" onPress={noEquipment} disabled={!envId} />
+      <Button variant="secondary" label={adding ? 'Cancelar' : 'Añadir equipo propio'} onPress={() => setAdding((a) => !a)} />
+      {adding ? (
+        <Card style={{ gap: space.md }}>
+          <Field label="Nombre del equipo" value={newName} onChangeText={setNewName} maxLength={60} placeholder="Ej.: Anillas de madera" />
+          <Text variant="caption" muted>Grupo</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
+            {FAMILIES.map((f) => <Chip key={f.id} label={f.label} selected={f.id === newFamily} onPress={() => setNewFamily(f.id)} />)}
+          </ScrollView>
+          <Button label="Guardar equipo" onPress={addOwn} disabled={newName.trim() === ''} />
+        </Card>
+      ) : null}
       {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}
     </View>
   );
@@ -196,7 +237,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         renderItem={({ item: r }) => 'group' in r ? (
           <GroupHeader {...r.group} onToggle={toggleGroup} />
         ) : (
-          <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} />
+          <ItemRow item={r.item} state={inventory[r.item.id]} onSet={set} onDelete={r.item.id.startsWith(CUSTOM_PREFIX) ? removeOwn : undefined} />
         )}
       />
       <View style={{ flexDirection: 'row', gap: space.sm, paddingTop: space.md }}>

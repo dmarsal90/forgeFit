@@ -70,3 +70,26 @@ it('Continuar está siempre visible (barra fija), sin bajar por la lista', async
   await fireEvent.press(await screen.findByText('Continuar'));
   expect(onNext).toHaveBeenCalledTimes(1);
 });
+
+it('añade un equipo propio, lo marca y lo elimina', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['home'] });
+  mockApp = { db, profile: a };
+  await render(<EquipmentAudit profileId={a.id} onNext={noop} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
+
+  await fireEvent.press(await screen.findByText('Añadir equipo propio'));
+  await fireEvent.changeText(screen.getByLabelText('Nombre del equipo'), 'Anillas de madera');
+  await fireEvent.press(screen.getByText('Calistenia y bandas'));
+  await fireEvent.press(screen.getByText('Guardar equipo'));
+  await fireEvent.changeText(screen.getByLabelText('Buscar equipo'), 'anillas');
+
+  await fireEvent.press(await screen.findByLabelText('Tengo: Anillas de madera'));
+  const home = await ensureEnvironment(db, a.id, 'home');
+  await waitFor(async () => expect(Object.values(await getInventory(db, home))).toEqual(['available']));
+
+  await fireEvent.press(screen.getByLabelText('Eliminar equipo propio: Anillas de madera'));
+  await waitFor(() => expect(screen.queryByText('Anillas de madera')).toBeNull());
+  expect(await getInventory(db, home)).toEqual({});
+});
