@@ -41,7 +41,7 @@ const goalsSchema = z
   .object({
     primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'),
     secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional(),
-    priorityMuscles: z.array(z.enum(ids(muscleLimitations))).max(3, 'Máximo 3').optional(),
+    priorityMuscles: z.array(z.enum(ids(muscleLimitations))).max(6, 'Máximo 6').optional(),
   })
   .refine((d) => !d.secondaryGoals?.includes(d.primaryGoal), { path: ['secondaryGoals'], message: 'Ya es tu objetivo principal' });
 
@@ -62,7 +62,7 @@ export const STEPS: Record<number, StepDef> = {
     fields: [
       { key: 'primaryGoal', label: 'Objetivo principal', options: goals },
       { key: 'secondaryGoals', label: 'Objetivos secundarios (hasta 2)', multi: true, optional: true, options: goals },
-      { key: 'priorityMuscles', label: 'Músculos prioritarios (hasta 3, opcional)', multi: true, optional: true, options: muscleLimitations },
+      { key: 'priorityMuscles', label: 'Músculos prioritarios (hasta 6, opcional)', multi: true, optional: true, options: muscleLimitations },
     ],
   },
   3: {

@@ -166,4 +166,11 @@ describe('objetivos nuevos, secundarios y prioridades', () => {
     const prio = planOf({ minutesPerSession: 90, priorityMuscles: ['biceps'] });
     expect(sets(prio, 'biceps')).toBeGreaterThan(sets(plain, 'biceps'));
   });
+
+  it('brazo completo y hombro como prioridad (4 músculos): el plan sigue siendo válido y dentro del tiempo', () => {
+    const r = generatePlan(base({ minutesPerSession: 60, priorityMuscles: ['biceps', 'triceps', 'forearm', 'deltoid'] }));
+    expect(r.status).toBe('ok');
+    if (r.status === 'insufficient') return;
+    for (const s of r.plan.sessions) expect(estimateMinutes(s)).toBeLessThanOrEqual(60);
+  });
 });
