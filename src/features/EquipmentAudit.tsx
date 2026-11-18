@@ -200,7 +200,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
 
   const header = (
     <View style={{ gap: space.md, paddingBottom: space.md }}>
-      <Text variant="caption" muted>Etapa 6 de 8</Text>
+      <Text variant="caption" muted>Etapa 6 de 9</Text>
       <Text variant="title">Tu equipamiento</Text>
       <Text muted>Marca qué tienes y qué no en cada entorno. Lo que no indiques queda «sin indicar»; nunca damos nada por supuesto.</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>

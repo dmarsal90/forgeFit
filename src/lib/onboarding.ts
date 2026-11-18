@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { EXERCISES } from '../data/exercises';
 
 type Option = { value: string | number; label: string };
-export type Field = { key: string; label: string; multi?: boolean; optional?: boolean; options: Option[] };
+export type Field = { key: string; label: string; multi?: boolean; optional?: boolean; picker?: boolean; options: Option[] };
 export type Consent = { kind: string; version: number; label: string; hint: string };
 export type StepDef = { title: string; intro: string; fields: Field[]; schema: z.ZodType; consent?: Consent };
 
@@ -58,7 +59,17 @@ const availabilitySchema = z.object({
   pauses: z.enum(['short', 'normal', 'long']).optional(),
 });
 
-// Etapas 2–7. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
+const exerciseIds = ids(EXERCISES.map((e) => ({ value: e.id, label: e.es })));
+export const EXERCISE_NAME: Record<string, string> = Object.fromEntries(EXERCISES.map((e) => [e.id, e.es]));
+const preferencesSchema = z.object({
+  modality: z.enum(['mixed', 'free', 'machines', 'calisthenics']).optional(),
+  tempo: z.enum(['normal', 'controlled', 'explosive']).optional(),
+  supersets: z.enum(['yes', 'no']).optional(),
+  excluded: z.array(z.enum(exerciseIds)).max(40, 'Máximo 40').optional(),
+  preferred: z.array(z.enum(exerciseIds)).max(40, 'Máximo 40').optional(),
+}).refine((d) => !d.excluded?.some((x) => d.preferred?.includes(x)), { path: ['preferred'], message: 'Un ejercicio no puede ser preferido y excluido a la vez' });
+
+// Etapas 2–8. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
 export const STEPS: Record<number, StepDef> = {
   2: {
     title: 'Tus objetivos', intro: 'Elige uno principal. Los secundarios son opcionales.', schema: goalsSchema,
@@ -121,9 +132,26 @@ export const STEPS: Record<number, StepDef> = {
       hint: 'Opcional y desactivado por defecto. Aún no se envía nada; antes de usarlo te volveremos a avisar. Puedes revocarlo cuando quieras.',
     },
   },
+  8: {
+    title: 'Tus preferencias', intro: 'Cómo te gusta entrenar. Todo es opcional y el plan lo usa para elegir y ordenar ejercicios.', schema: preferencesSchema,
+    fields: [
+      { key: 'modality', label: 'Modalidad', optional: true, options: [
+        { value: 'mixed', label: 'Mixta' }, { value: 'free', label: 'Pesos libres' },
+        { value: 'machines', label: 'Máquinas y poleas' }, { value: 'calisthenics', label: 'Calistenia' },
+      ] },
+      { key: 'tempo', label: 'Tempo de las repeticiones', optional: true, options: [
+        { value: 'normal', label: 'Normal' }, { value: 'controlled', label: 'Controlado (bajada de 3 s)' }, { value: 'explosive', label: 'Explosivo al subir' },
+      ] },
+      { key: 'supersets', label: 'Biseries (dos ejercicios seguidos, ahorran tiempo)', optional: true, options: [
+        { value: 'yes', label: 'Sí, me gustan' }, { value: 'no', label: 'Prefiero series normales' },
+      ] },
+      { key: 'excluded', label: 'Ejercicios que no quieres hacer', multi: true, optional: true, picker: true, options: [] },
+      { key: 'preferred', label: 'Ejercicios que prefieres', multi: true, optional: true, picker: true, options: [] },
+    ],
+  },
 };
 
-export const LAST_STEP = 8;
+export const LAST_STEP = 9;
 
 export type StepValues = Record<string, string | number | (string | number)[] | undefined>;
 
@@ -141,12 +169,12 @@ export function summarize(step: number, values: StepValues): string[] {
   return STEPS[step].fields.flatMap((f) => {
     const raw = values[f.key];
     const picked = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]);
-    const labels = picked.map((v) => f.options.find((o) => o.value === v)?.label).filter(Boolean);
+    const labels = picked.map((v) => (f.picker ? EXERCISE_NAME[v as string] : f.options.find((o) => o.value === v)?.label)).filter(Boolean);
     return labels.length ? [`${f.label.replace(/ \(.*\)$/, '')}: ${labels.join(', ')}`] : [];
   });
 }
 
-const FORM_STEPS = [2, 3, 4, 5, 6, 7];
+const FORM_STEPS = [2, 3, 4, 5, 6, 7]; // obligatorias; la 8 (preferencias) es opcional y no bloquea el plan
 
 /** Etapas guardadas (de 2 a 7) y la siguiente a completar; si no falta ninguna, la revisión (8). */
 export function onboardingProgress(drafts: Record<number, unknown>) {

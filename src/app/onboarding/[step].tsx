@@ -5,8 +5,9 @@ import { ENV_LABELS, inventorySummary } from '../../db/inventory';
 import { getDrafts, grantConsent, hasConsent, revokeConsent, saveDraft } from '../../db/onboarding';
 import { useApp } from '../../features/AppContext';
 import { EquipmentAudit } from '../../features/EquipmentAudit';
-import { LAST_STEP, STEPS, StepValues, summarize, validateStep } from '../../lib/onboarding';
-import { Button, Card, Choice, Screen, Text } from '../../ui/components';
+import { EXERCISE_NAME, LAST_STEP, STEPS, StepValues, summarize, validateStep } from '../../lib/onboarding';
+import { normalize } from '../../data/equipment';
+import { Button, Card, Choice, Field, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 export default function OnboardingStep() {
@@ -86,7 +87,7 @@ function Step({ n, profileId }: { n: number; profileId: string }) {
       <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={() => (n > 2 ? leave(n - 1) : router.replace('/(tabs)'))} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
         <Text muted>← Volver</Text>
       </Pressable>
-      <Text variant="caption" muted>Etapa {n} de 8</Text>
+      <Text variant="caption" muted>Etapa {n} de 9</Text>
       <Text variant="title">{def.title}</Text>
       <Text muted>{def.intro}</Text>
 
@@ -95,6 +96,12 @@ function Step({ n, profileId }: { n: number; profileId: string }) {
         return (
           <View key={f.key} style={{ gap: space.sm }} accessibilityRole={f.multi ? undefined : 'radiogroup'}>
             <Text variant="subtitle">{f.label}</Text>
+            {f.picker ? (
+              <ExercisePicker
+                label={f.label} value={Array.isArray(cur) ? (cur as string[]) : []}
+                onChange={(ids) => setValues((v) => ({ ...v, [f.key]: ids.length ? ids : undefined }))}
+              />
+            ) : null}
             {f.options.map((o) => (
               <Choice
                 key={o.value} label={o.label} multi={f.multi}
@@ -118,6 +125,24 @@ function Step({ n, profileId }: { n: number; profileId: string }) {
   );
 }
 
+const NAMES = Object.entries(EXERCISE_NAME).map(([id, es]) => ({ id, es, key: normalize(es) }));
+
+function ExercisePicker({ label, value, onChange }: { label: string; value: string[]; onChange: (ids: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const key = normalize(q.trim());
+  const hits = key ? NAMES.filter((e) => e.key.includes(key) && !value.includes(e.id)).slice(0, 6) : [];
+  return (
+    <View style={{ gap: space.sm }}>
+      {value.map((id) => (
+        <Choice key={id} multi selected label={EXERCISE_NAME[id] ?? id} onPress={() => onChange(value.filter((x) => x !== id))} />
+      ))}
+      <Field label={`Buscar para añadir: ${label.toLowerCase()}`} value={q} onChangeText={setQ} autoCorrect={false} placeholder="Ej.: sentadilla" />
+      {hits.map((e) => <Choice key={e.id} multi selected={false} label={e.es} onPress={() => { onChange([...value, e.id]); setQ(''); }} />)}
+      {key && !hits.length ? <Text variant="caption" muted>Ningún ejercicio coincide.</Text> : null}
+    </View>
+  );
+}
+
 function Review({ profileId }: { profileId: string }) {
   const { db } = useApp();
   const [drafts, setDrafts] = useState<Record<number, unknown> | null>(null);
@@ -135,10 +160,10 @@ function Review({ profileId }: { profileId: string }) {
   const missing = [2, 4].filter((n) => drafts && !drafts[n]);
   return (
     <Screen>
-      <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={() => router.replace('/onboarding/7')} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Volver" onPress={() => router.replace('/onboarding/8')} hitSlop={12} style={{ minHeight: 48, justifyContent: 'center' }}>
         <Text muted>← Volver</Text>
       </Pressable>
-      <Text variant="caption" muted>Etapa 8 de 8</Text>
+      <Text variant="caption" muted>Etapa 9 de 9</Text>
       <Text variant="title">Revisión</Text>
       {loadError ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">No se pudo cargar tu progreso.</Text> : null}
       {drafts ? Object.keys(STEPS).map(Number).map((n) => {
