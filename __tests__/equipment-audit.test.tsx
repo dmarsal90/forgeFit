@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { migrate } from '../src/db';
-import { getInventory, ensureEnvironment } from '../src/db/inventory';
+import { addCustomItem } from '../src/db/customEquipment';
+import { getInventory, ensureEnvironment, setItemState } from '../src/db/inventory';
 import { setFavorite } from '../src/db/favorites';
 import { saveDraft } from '../src/db/onboarding';
 import { createProfile } from '../src/db/profiles';
@@ -8,9 +9,10 @@ import { EquipmentAudit } from '../src/features/EquipmentAudit';
 import { memoryDb } from '../test-utils/sqlite';
 
 let mockApp: unknown;
+let mockFocus: () => void = () => {};
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
-  return { router: { push: jest.fn() }, useFocusEffect: (cb: () => void) => useEffect(cb, [cb]) };
+  return { router: { push: jest.fn() }, useFocusEffect: (cb: () => void) => { mockFocus = cb; useEffect(cb, [cb]); } };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('../src/features/AppContext', () => ({ useApp: () => mockApp }));
@@ -111,4 +113,23 @@ it('«Solo favoritos» muestra únicamente los favoritos, desplegados', async ()
   await fireEvent.press(await screen.findByText('Solo favoritos'));
   expect(await screen.findByText('Banco plano fijo')).toBeTruthy();
   expect(screen.queryByText('Banco declinado')).toBeNull();
+});
+
+it('al volver a la pantalla se recargan el equipo propio y los estados cambiados fuera', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  await saveDraft(db, a.id, 5, { environments: ['home'] });
+  mockApp = { db, profile: a };
+  await render(<EquipmentAudit profileId={a.id} onNext={noop} onExit={noop} onBack={noop} onPickEnvironments={noop} />);
+  expect(await screen.findByText(/0 disponibles · 0 no disponibles/)).toBeTruthy();
+
+  // como hace la importación de una copia desde otra pantalla
+  const own = await addCustomItem(db, a.id, { name: 'Anillas', family: 'bodyweight' });
+  await setItemState(db, await ensureEnvironment(db, a.id, 'home'), own.id, 'available');
+  await act(async () => { mockFocus(); });
+
+  expect(await screen.findByText(/1 disponibles · 0 no disponibles/)).toBeTruthy();
+  await fireEvent.changeText(screen.getByLabelText('Buscar equipo'), 'anillas');
+  expect(await screen.findByText('Anillas')).toBeTruthy();
 });

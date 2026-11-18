@@ -104,14 +104,12 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
   const [newFamily, setNewFamily] = useState(FAMILIES[0].id);
   const items = useMemo(() => [...CATALOG, ...custom], [custom]);
 
-  // Se recarga al volver de la ficha, donde se marcan los favoritos.
+  // Se recarga al volver de la ficha o de la copia, que cambian estados, favoritos y equipo propio.
   useFocusEffect(useCallback(() => {
     listFavorites(db, profileId).then(setFavs).catch(() => setError('No se pudieron cargar tus favoritos.'));
-  }, [db, profileId]));
-
-  useEffect(() => {
     listCustomItems(db, profileId).then(setCustom).catch(() => setError('No se pudo cargar tu equipo propio.'));
-  }, [db, profileId]);
+    if (envId) getInventory(db, envId).then(setInventory).catch(() => setError('No se pudo recargar tu equipamiento.'));
+  }, [db, profileId, envId]));
 
   useEffect(() => {
     getDrafts(db, profileId).then((d) => {
