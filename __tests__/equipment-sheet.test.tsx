@@ -70,3 +70,14 @@ it('marca y desmarca el favorito', async () => {
   expect(await screen.findByText('Añadir a favoritos')).toBeTruthy();
   expect((await listFavorites(db, profile.id)).size).toBe(0);
 });
+
+it('en libras muestra y recibe libras, pero guarda kilos', async () => {
+  const { db, env } = await seed();
+  mockApp = { db, profile: { ...(mockApp as { profile: object }).profile, weightUnit: 'lb' } };
+  mockParams = { id: 'bench_flat_fixed', env };
+  await render(<EquipmentSheet />);
+  await fireEvent.changeText(await screen.findByLabelText('Peso mínimo (lb)'), '45');
+  await fireEvent.press(screen.getByText('Guardar datos'));
+  expect(await screen.findByText('Guardado.')).toBeTruthy();
+  expect((await getAttributes(db, env, 'bench_flat_fixed')).minKg).toBeCloseTo(20.412, 2);
+});
