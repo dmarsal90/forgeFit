@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { getProgressStats, type ProgressStats } from '../../db/stats';
 import { useApp } from '../../features/AppContext';
+import { fmtWeight } from '../../lib/units';
 import { Card, EmptyState, Screen, Text } from '../../ui/components';
 import { space } from '../../ui/tokens';
 
@@ -35,7 +36,7 @@ export default function ProgressScreen() {
       <Card style={{ gap: space.xs }}>
         <Text variant="caption" muted>Esta semana</Text>
         <Text variant="subtitle">{week.done} de {week.planned} sesiones</Text>
-        <Text muted>Volumen: {volumeKg} kg (peso × repeticiones)</Text>
+        <Text muted>Volumen: {fmtWeight(volumeKg, profile?.weightUnit ?? 'kg')} (peso × repeticiones)</Text>
       </Card>
       <Card style={{ gap: space.xs }}>
         <Text variant="caption" muted>Total</Text>

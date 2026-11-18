@@ -161,7 +161,10 @@ it('los perfiles no se mezclan y borrar un perfil elimina sus revisiones y opera
 it('la migración 005 crea la revisión 1 de los planes que ya existían', async () => {
   const db = memoryDb();
   await migrate(db, migrations.slice(0, 4));
-  const a = await createProfile(db, { alias: 'Ana' });
+  // Perfil insertado a mano: createProfile ya escribe columnas de migraciones posteriores a la 4.
+  await db.runAsync("INSERT INTO profiles (id, alias, created_at, updated_at) VALUES ('a1', 'Ana', 'now', 'now')");
+  await db.runAsync("INSERT OR REPLACE INTO app_state (key, value) VALUES ('active_profile_id', 'a1')");
+  const a = { id: 'a1' };
   await db.runAsync("INSERT INTO training_plans (id, profile_id, mode, status, plan_json, created_at) VALUES ('p1', ?, 'local', 'active', ?, 'now')", [a.id, JSON.stringify(plan())]);
   await migrate(db); // aplica la 005
   expect((await getActivePlanState(db, a.id))?.version).toBe(1);

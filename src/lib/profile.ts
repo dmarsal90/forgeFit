@@ -9,6 +9,7 @@ const optionalInt = (min: number, max: number) =>
 export const profileInputSchema = z.object({
   alias: z.string().trim().min(1, 'Escribe un nombre o alias').max(40, 'Máximo 40 caracteres'),
   anatomicalModel: z.enum(['male', 'female']).optional(),
+  weightUnit: z.enum(['kg', 'lb']).optional(),
   age: optionalInt(10, 100),
   heightCm: optionalInt(100, 250),
 });

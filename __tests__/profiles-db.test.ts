@@ -1,5 +1,6 @@
 import { migrate } from '../src/db';
 import {
+  setWeightUnit,
   archiveProfile, countProfiles, createProfile, deleteProfile, getActiveProfile, listProfiles, setActiveProfile,
 } from '../src/db/profiles';
 import { memoryDb } from '../test-utils/sqlite';
@@ -71,4 +72,16 @@ it('crea perfiles aunque no exista globalThis.crypto (Hermes) y con ids distinto
   } finally {
     if (saved) Object.defineProperty(globalThis, 'crypto', saved); else delete (globalThis as { crypto?: unknown }).crypto;
   }
+});
+
+it('la unidad de peso nace en kg, se elige al crear y se cambia solo en ese perfil', async () => {
+  const db = await fresh();
+  const a = await createProfile(db, { alias: 'Ana' });
+  const b = await createProfile(db, { alias: 'Beto', weightUnit: 'lb' });
+  expect([a.weightUnit, b.weightUnit]).toEqual(['kg', 'lb']);
+  await setWeightUnit(db, a.id, 'lb');
+  expect((await listProfiles(db)).map((p) => p.weightUnit)).toEqual(['lb', 'lb']);
+  await setWeightUnit(db, b.id, 'kg');
+  expect((await listProfiles(db)).map((p) => p.weightUnit)).toEqual(['lb', 'kg']);
+  await expect(setWeightUnit(db, a.id, 'stone' as never)).rejects.toThrow();
 });

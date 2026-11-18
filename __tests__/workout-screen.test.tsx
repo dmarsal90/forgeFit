@@ -65,3 +65,21 @@ it('pide repeticiones antes de completar una serie', async () => {
   await fireEvent.press(await screen.findByRole('button', { name: /Completar serie/ }));
   expect(await screen.findByText('Indica las repeticiones (0–200).')).toBeTruthy();
 });
+
+it('con el perfil en libras pide y muestra libras, pero guarda kilos', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana', weightUnit: 'lb' });
+  await saveActivePlan(db, profile.id, plan, null);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+
+  await render(<WorkoutScreen />);
+  await fireEvent.changeText(await screen.findByLabelText('Peso (lb)'), '135');
+  await fireEvent.changeText(screen.getByLabelText('Repeticiones'), '10');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ }));
+  expect(await screen.findByText(/135 lb × 10/)).toBeTruthy();
+  const done = (await loadWorkout(db, mockId))!.events.map((e) => e.event).find((e) => e.type === 'set_done');
+  expect(done && 'weightKg' in done && done.weightKg).toBeCloseTo(61.235, 2);
+});

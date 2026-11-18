@@ -7,14 +7,15 @@ import { attributesSchema, getAttributes, setAttributes } from '../../db/equipme
 import { listFavorites, setFavorite } from '../../db/favorites';
 import { getInventory, ItemState, setItemState } from '../../db/inventory';
 import { useApp } from '../../features/AppContext';
+import { kgToUnit, unitToKg } from '../../lib/units';
 import { Button, Card, Field, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 const FIELDS = [
-  { key: 'minKg', label: 'Peso mínimo (kg)' },
-  { key: 'maxKg', label: 'Peso máximo (kg)' },
-  { key: 'stepKg', label: 'Incremento (kg)' },
-  { key: 'barKg', label: 'Peso de la barra o soporte (kg)' },
+  { key: 'minKg', label: 'Peso mínimo' },
+  { key: 'maxKg', label: 'Peso máximo' },
+  { key: 'stepKg', label: 'Incremento' },
+  { key: 'barKg', label: 'Peso de la barra o soporte' },
 ] as const;
 type Key = (typeof FIELDS)[number]['key'];
 
@@ -23,6 +24,7 @@ const parse = (t: string) => (t.trim() === '' ? null : Number(t.trim().replace('
 
 export default function EquipmentSheet() {
   const { db, profile } = useApp();
+  const unit = profile?.weightUnit ?? 'kg';
   const { id, env } = useLocalSearchParams<{ id: string; env: string }>();
   const [item, setItem] = useState<CatalogItem | null | undefined>(undefined);
   const [state, setState] = useState<ItemState | undefined>();
@@ -41,10 +43,10 @@ export default function EquipmentSheet() {
       const [inv, a, favs] = await Promise.all([getInventory(db, env), getAttributes(db, env, id), listFavorites(db, profile.id)]);
       setState(inv[id]);
       setFav(favs.has(id));
-      setText(Object.fromEntries(FIELDS.map((f) => [f.key, a[f.key] === null ? '' : String(a[f.key])])) as Record<Key, string>);
+      setText(Object.fromEntries(FIELDS.map((f) => [f.key, a[f.key] === null ? '' : String(kgToUnit(a[f.key] as number, unit))])) as Record<Key, string>);
       setItem(found);
     })().catch(() => setItem(null));
-  }, [db, profile, id, env]);
+  }, [db, profile, id, env, unit]);
 
   async function toggle(next: ItemState) {
     const value = state === next ? null : next;
@@ -57,8 +59,8 @@ export default function EquipmentSheet() {
   }
 
   async function save() {
-    const parsed = attributesSchema.safeParse(Object.fromEntries(FIELDS.map((f) => [f.key, parse(text[f.key])])));
-    if (!parsed.success) { setError(parsed.error.issues[0].path[0] === 'minKg' && parsed.error.issues[0].message.startsWith('El mínimo') ? parsed.error.issues[0].message : 'Revisa los valores: números entre 0 y 1000 (el incremento, mayor que 0).'); setSaved(false); return; }
+    const parsed = attributesSchema.safeParse(Object.fromEntries(FIELDS.map((f) => { const v = parse(text[f.key]); return [f.key, v === null ? null : unitToKg(v, unit)]; })));
+    if (!parsed.success) { setError(parsed.error.issues[0].path[0] === 'minKg' && parsed.error.issues[0].message.startsWith('El mínimo') ? parsed.error.issues[0].message : `Revisa los valores: números entre 0 y ${kgToUnit(1000, unit)} ${unit} (el incremento, mayor que 0).`); setSaved(false); return; }
     try { await setAttributes(db, env, id, parsed.data); setError(null); setSaved(true); } catch { setError('No se pudo guardar.'); setSaved(false); }
   }
 
@@ -91,7 +93,7 @@ export default function EquipmentSheet() {
         <Text variant="subtitle">Datos de la máquina</Text>
         <Text variant="caption" muted>Opcionales. Sirven para no sugerirte cargas imposibles.</Text>
         {FIELDS.map((f) => (
-          <Field key={f.key} label={f.label} value={text[f.key]} keyboardType="decimal-pad" maxLength={7}
+          <Field key={f.key} label={`${f.label} (${unit})`} value={text[f.key]} keyboardType="decimal-pad" maxLength={7}
             onChangeText={(v) => { setText((t) => ({ ...t, [f.key]: v })); setSaved(false); }} />
         ))}
         {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}

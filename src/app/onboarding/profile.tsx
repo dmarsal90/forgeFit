@@ -14,6 +14,7 @@ export default function CreateProfile() {
   const { db, refresh } = useApp();
   const [alias, setAlias] = useState('');
   const [model, setModel] = useState<Model>(undefined);
+  const [unit, setUnit] = useState<'kg' | 'lb'>('kg');
   const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -21,7 +22,7 @@ export default function CreateProfile() {
   const [saving, setSaving] = useState(false);
 
   async function submit() {
-    const parsed = profileInputSchema.safeParse({ alias, anatomicalModel: model, age, heightCm: height });
+    const parsed = profileInputSchema.safeParse({ alias, anatomicalModel: model, weightUnit: unit, age, heightCm: height });
     if (!parsed.success) {
       const e: Record<string, string> = {};
       for (const i of parsed.error.issues) e[String(i.path[0])] ??= i.message;
@@ -61,6 +62,14 @@ export default function CreateProfile() {
         </View>
         {model ? <Button variant="ghost" label="Quitar selección" onPress={() => setModel(undefined)} /> : null}
         <Text variant="caption" muted>Es solo la figura que verás en pantalla. No afecta a tu rutina ni a tus capacidades.</Text>
+      </View>
+
+      <View style={{ gap: space.sm }} accessibilityRole="radiogroup">
+        <Text variant="subtitle">Unidad de peso</Text>
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <View style={{ flex: 1 }}><Choice label="Kilos (kg)" selected={unit === 'kg'} onPress={() => setUnit('kg')} /></View>
+          <View style={{ flex: 1 }}><Choice label="Libras (lb)" selected={unit === 'lb'} onPress={() => setUnit('lb')} /></View>
+        </View>
       </View>
 
       <Field label="Edad (opcional)" value={age} onChangeText={setAge} keyboardType="number-pad" maxLength={3} error={errors.age} />
