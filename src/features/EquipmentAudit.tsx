@@ -215,6 +215,7 @@ export function EquipmentAudit({ profileId, onNext, onExit, onBack, onPickEnviro
         {counts.yes} disponibles · {counts.no} no disponibles · {items.length - counts.yes - counts.no} sin indicar
       </Text>
       <Button variant="secondary" label="No tengo equipamiento" onPress={noEquipment} disabled={!envId} />
+      <Button variant="ghost" label="Exportar o importar copia" onPress={() => router.push('/equipment-data' as never)} />
       <Button variant="secondary" label={adding ? 'Cancelar' : 'Añadir equipo propio'} onPress={() => setAdding((a) => !a)} />
       {adding ? (
         <Card style={{ gap: space.md }}>
