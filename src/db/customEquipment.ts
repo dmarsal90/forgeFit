@@ -5,7 +5,7 @@ import type { Db } from './index';
 
 export const CUSTOM_PREFIX = 'user_';
 
-const inputSchema = z.object({
+export const inputSchema = z.object({
   name: z.string().trim().min(1, 'Escribe un nombre').max(60, 'Máximo 60 caracteres'),
   family: z.enum(FAMILIES.map((f) => f.id) as [string, ...string[]]),
 });
