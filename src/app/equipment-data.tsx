@@ -23,7 +23,7 @@ export default function EquipmentData() {
     const r = await importEquipment(db, profile!.id, text);
     if (!r.ok) { setMsg({ ok: false, text: r.error }); return; }
     setText('');
-    setMsg({ ok: true, text: `Importado: ${r.items} marcas de equipo, ${r.attributes} fichas, ${r.favorites} favoritos y ${r.custom} equipos propios nuevos.` });
+    setMsg({ ok: true, text: `Importado. Marcas de equipo: ${r.items} · Fichas: ${r.attributes} · Favoritos: ${r.favorites} · Equipos propios nuevos: ${r.custom}.` });
   }
 
   return (

@@ -43,6 +43,6 @@ it('importa una copia válida y muestra el resumen; una inválida muestra el err
 
   await fireEvent.changeText(screen.getByLabelText('Texto de la copia'), JSON.stringify(await exportEquipment(db, a.id)));
   await fireEvent.press(screen.getByText('Importar copia'));
-  expect(await screen.findByText(/Importado: 1 marcas de equipo/)).toBeTruthy();
+  expect(await screen.findByText(/Importado\. Marcas de equipo: 1 ·/)).toBeTruthy();
   expect(await getInventory(db, await ensureEnvironment(db, b.id, 'home'))).toEqual({ bench_flat_fixed: 'available' });
 });
