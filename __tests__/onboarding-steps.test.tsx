@@ -26,6 +26,23 @@ describe('validación de etapas', () => {
     expect(validateStep(2, { primaryGoal: 'strength', secondaryGoals: ['strength'] }).errors.secondaryGoals).toBeTruthy();
     expect(validateStep(2, { primaryGoal: 'strength', secondaryGoals: ['muscle'] }).data).not.toBeNull();
   });
+  it('objetivos nuevos y músculos prioritarios (máximo 6, solo músculos conocidos)', () => {
+    expect(validateStep(2, { primaryGoal: 'power', secondaryGoals: ['strength_muscle'], priorityMuscles: ['biceps', 'triceps', 'forearm', 'deltoid'] }).data).not.toBeNull();
+    expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['biceps', 'triceps', 'forearm', 'deltoid', 'calves', 'core', 'glutes'] }).errors.priorityMuscles).toBeTruthy();
+    expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['wings'] }).errors.priorityMuscles).toBeTruthy();
+  });
+  it('disponibilidad: división, sueño y pausas opcionales y acotados', () => {
+    expect(validateStep(4, { days: [0], minutes: 60 }).data).not.toBeNull();
+    expect(validateStep(4, { days: [0], minutes: 60, split: 'ppl', sleep: 'lt6', pauses: 'long' }).data).not.toBeNull();
+    expect(validateStep(4, { days: [0], minutes: 60, split: 'bro' }).errors.split).toBeTruthy();
+  });
+  it('preferencias: opcionales, con ejercicios conocidos y sin solaparse excluidos y preferidos', () => {
+    expect(validateStep(8, {}).data).not.toBeNull();
+    expect(validateStep(8, { modality: 'machines', tempo: 'controlled', supersets: 'yes', excluded: ['back_squat'], preferred: ['lunge'] }).data).not.toBeNull();
+    expect(validateStep(8, { excluded: ['no_existe'] }).errors.excluded).toBeTruthy();
+    expect(validateStep(8, { excluded: ['lunge'], preferred: ['lunge'] }).errors.preferred).toBeTruthy();
+    expect(summarize(8, { excluded: ['back_squat'], modality: 'free' })).toEqual(['Modalidad: Pesos libres', 'Ejercicios que no quieres hacer: Sentadilla trasera']);
+  });
   it('experiencia: el nivel es obligatorio, la técnica no', () => {
     expect(validateStep(3, {}).errors.level).toBeTruthy();
     expect(validateStep(3, { level: 'beginner' }).data).toEqual({ level: 'beginner' });
@@ -95,7 +112,7 @@ it('el consentimiento de IA nace desactivado y solo se registra si se marca; se 
 it('onboardingProgress cuenta las etapas guardadas y propone la primera pendiente', () => {
   expect(onboardingProgress({})).toEqual({ done: 0, total: 6, next: 2 });
   expect(onboardingProgress({ 2: {}, 3: {}, 5: {} })).toEqual({ done: 3, total: 6, next: 4 });
-  expect(onboardingProgress({ 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {} })).toEqual({ done: 6, total: 6, next: 8 });
+  expect(onboardingProgress({ 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {} })).toEqual({ done: 6, total: 6, next: 9 });
 });
 
 it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «Continuar» pasa a la 7', async () => {
@@ -117,4 +134,26 @@ it('etapa 6: marcar un equipo y «Guardar y salir» guarda y vuelve a Inicio; «
   mockReplace.mockClear();
   await fireEvent.press(screen.getByText('Continuar'));
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/7'));
+});
+
+it('preferencias: busca un ejercicio sin acentos, lo añade como excluido, lo quita y guarda', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const a = await createProfile(db, { alias: 'Ana' });
+  mockApp = { db, profile: a };
+  mockStep = '8';
+  mockReplace.mockClear();
+  await render(<OnboardingStep />);
+
+  const [excludedSearch] = screen.getAllByLabelText(/Buscar para añadir: ejercicios que no quieres hacer/);
+  await fireEvent.changeText(excludedSearch, 'sentadilla tras');
+  await fireEvent.press(await screen.findByText('Sentadilla trasera'));
+  await fireEvent.press(screen.getByText('Guardar y salir'));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
+  expect(await getDrafts(db, a.id)).toEqual({ 8: { excluded: ['back_squat'] } });
+
+  await render(<OnboardingStep />);
+  await fireEvent.press((await screen.findAllByText('Sentadilla trasera'))[0]); // al tocar el elegido se quita
+  await fireEvent.press(screen.getAllByText('Guardar y salir')[0]);
+  await waitFor(async () => expect((await getDrafts(db, a.id))[8]).toEqual({}));
 });

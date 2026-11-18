@@ -1,6 +1,7 @@
 import { CATALOG } from '../src/data/equipment';
 import { EXERCISES } from '../src/data/exercises';
 import { generatePlan, inputFromDrafts, type EngineInput } from '../src/lib/planEngine';
+import { variantModality } from '../src/lib/modality';
 import { estimateMinutes, validatePlan } from '../src/lib/planValidator';
 
 const FULL_GYM = new Set(CATALOG.filter((i) => !['free_space'].includes(i.id)).map((i) => i.id));
@@ -105,7 +106,7 @@ describe('inputFromDrafts', () => {
   };
   it('convierte los borradores en entrada del motor', () => {
     const r = inputFromDrafts(drafts, new Set(['dumbbells_fixed_hex']));
-    expect('input' in r && r.input).toMatchObject({ goal: 'muscle', level: 3, days: [0, 1, 2, 3, 4], minutesPerSession: 60, limitations: { joints: ['elbow'], muscles: [] } });
+    expect('input' in r && r.input).toMatchObject({ goal: 'muscle', secondaryGoals: ['strength'], level: 3, days: [0, 1, 2, 3, 4], minutesPerSession: 60, limitations: { joints: ['elbow'], muscles: [] } });
   });
   it('dice qué falta si el onboarding está incompleto o inválido', () => {
     const r = inputFromDrafts({ 2: { primaryGoal: 'muscle' }, 4: { days: [], minutes: 60 } }, new Set());
@@ -127,3 +128,145 @@ it('con molestias de codo sigue habiendo tracción y press (con aviso), sin curl
   expect(w).toMatch(/implican una zona con molestias/);
   expect(w).not.toMatch(/elbow/);
 });
+
+describe('objetivos nuevos, secundarios y prioridades', () => {
+  const planOf = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const all = (p: ReturnType<typeof planOf>) => p.sessions.flatMap((s) => s.blocks.flatMap((b) => b.items));
+  const compounds = (p: ReturnType<typeof planOf>) => all(p).filter((i) => !['core', 'isolation'].includes(exOf(i.exerciseVariantId).pattern) && !['face_pull'].includes(exOf(i.exerciseVariantId).id));
+  const accessories = (p: ReturnType<typeof planOf>) => all(p).filter((i) => exOf(i.exerciseVariantId).pattern === 'isolation');
+
+  it('fuerza e hipertrofia: básicos de 5-8 repeticiones', () => {
+    for (const i of compounds(planOf({ goal: 'strength_muscle' }))) expect(i.repRange[1]).toBeLessThanOrEqual(8);
+  });
+
+  it('potencia: series cortas y explosivas; a un principiante se le da fuerza con aviso', () => {
+    const p = planOf({ goal: 'power', level: 2 });
+    for (const i of compounds(p)) expect(i.repRange[1]).toBeLessThanOrEqual(5);
+    expect(compounds(p)[0].effortGuidance).toMatch(/velocidad/);
+    const novice = planOf({ goal: 'power', level: 1, days: [0, 2, 4] });
+    expect(novice.warnings?.join(' ')).toMatch(/potencia requiere experiencia/);
+    expect(novice.summary).toMatch(/fuerza/);
+    for (const i of all(novice)) expect(i.repRange[0]).toBeGreaterThanOrEqual(5);
+  });
+
+  it('el objetivo secundario prescribe los accesorios y se refleja en el resumen', () => {
+    const p = planOf({ goal: 'strength', secondaryGoals: ['endurance'] });
+    expect(Math.max(...accessories(p).map((i) => i.repRange[1]))).toBeGreaterThanOrEqual(15);
+    for (const i of compounds(p)) expect(i.repRange[1]).toBeLessThanOrEqual(8);
+    expect(p.summary).toMatch(/también resistencia/);
+    expect(Math.max(...accessories(planOf({ goal: 'strength' })).map((i) => i.repRange[1]))).toBeLessThan(15);
+  });
+
+  it('músculos prioritarios: más series semanales para ese músculo', () => {
+    const sets = (p: ReturnType<typeof planOf>, m: string) => all(p).filter((i) => exOf(i.exerciseVariantId).primary.includes(m)).reduce((n, i) => n + i.sets, 0);
+    const plain = planOf({ minutesPerSession: 90 });
+    const prio = planOf({ minutesPerSession: 90, priorityMuscles: ['biceps'] });
+    expect(sets(prio, 'biceps')).toBeGreaterThan(sets(plain, 'biceps'));
+  });
+
+  it('brazo completo y hombro como prioridad (4 músculos): el plan sigue siendo válido y dentro del tiempo', () => {
+    const r = generatePlan(base({ minutesPerSession: 60, priorityMuscles: ['biceps', 'triceps', 'forearm', 'deltoid'] }));
+    expect(r.status).toBe('ok');
+    if (r.status === 'insufficient') return;
+    for (const s of r.plan.sessions) expect(estimateMinutes(s)).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('disponibilidad: división, sueño y pausas', () => {
+  const run = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const names = (p: ReturnType<typeof run>) => p.sessions.map((s) => s.name);
+
+  it('respeta la división pedida cuando los días la admiten', () => {
+    expect(names(run({ days: [0, 2, 4], split: 'ppl' }))).toEqual(['Empuje', 'Tracción', 'Piernas']);
+    expect(names(run({ days: [0, 1, 3, 4], split: 'full' }))).toEqual(Array(4).fill('Cuerpo completo'));
+    expect(names(run({ days: [0, 2, 4], split: 'upper_lower' }))).toEqual(['Tren superior', 'Tren inferior', 'Tren superior']);
+  });
+
+  it('si los días no admiten la división, usa la automática y avisa', () => {
+    const p = run({ days: [0, 3], split: 'ppl' });
+    expect(names(p)).toEqual(['Cuerpo completo', 'Cuerpo completo']);
+    expect(p.warnings?.join(' ')).toMatch(/no cabe la división/);
+  });
+
+  it('dormir menos de 6 h: máximo 4 sesiones, menos volumen y aviso', () => {
+    expect(run({ days: [0, 1, 2, 3, 4, 5], sleep: 'lt6' }).sessions.length).toBeLessThanOrEqual(4);
+    const same = { days: [0, 1, 2, 3], split: 'upper_lower' as const, minutesPerSession: 90 };
+    const normal = run(same), tired = run({ ...same, sleep: 'lt6' });
+    expect(tired.warnings?.join(' ')).toMatch(/Duermes poco/);
+    const sets = (p: typeof tired) => p.sessions.reduce((n, s) => n + s.blocks.reduce((m, b) => m + b.items[0].sets, 0), 0);
+    expect(sets(tired)).toBeLessThan(sets(normal));
+    expect(run({ sleep: '7plus' }).warnings?.join(' ') ?? '').not.toMatch(/Duermes poco/);
+  });
+
+  it('las pausas escalan el descanso entre series', () => {
+    const rest = (pauses: EngineInput['pauses']) => run({ pauses, minutesPerSession: 90 }).sessions[0].blocks[0].items[0].restSeconds;
+    expect(rest('short')).toBeLessThan(rest('normal'));
+    expect(rest('long')).toBeGreaterThan(rest('normal'));
+  });
+});
+
+describe('preferencias: excluidos, preferidos, modalidad, tempo y biseries', () => {
+  const run = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const its = (p: ReturnType<typeof run>) => p.sessions.flatMap((s) => s.blocks.flatMap((b) => b.items));
+  const ids = (p: ReturnType<typeof run>) => its(p).map((i) => exOf(i.exerciseVariantId).id);
+
+  it('los ejercicios excluidos nunca aparecen', () => {
+    const first = ids(run({}));
+    const out = run({ excluded: first.slice(0, 8) });
+    for (const id of first.slice(0, 8)) expect(ids(out)).not.toContain(id);
+  });
+
+  it('los preferidos se eligen frente a sus alternativas del mismo hueco', () => {
+    const slotAlt = EXERCISES.find((e) => e.id === 'barbell_row')!;
+    expect(ids(run({ preferred: [slotAlt.id], level: 3 }))).toContain('barbell_row');
+    expect(ids(run({ preferred: ['seated_cable_row'], level: 3 }))).toContain('seated_cable_row');
+  });
+
+  it('la modalidad inclina la elección de variantes sin vaciar el plan', () => {
+    const share = (m: 'free' | 'machines') => {
+      const p = run({ modality: m });
+      const v = its(p).map((i) => variantModality(exOf(i.exerciseVariantId).variants.find((x) => x.id === i.exerciseVariantId)!));
+      return v.filter((x) => x === m).length / v.length;
+    };
+    expect(share('machines')).toBeGreaterThan(0.4);
+    expect(share('free')).toBeGreaterThan(0.4);
+  });
+
+  it('el tempo se refleja en la indicación de esfuerzo', () => {
+    expect(its(run({ tempo: 'controlled' })).some((i) => /Baja en 3 segundos/.test(i.effortGuidance ?? ''))).toBe(true);
+    expect(its(run({ tempo: 'explosive' })).some((i) => /máxima velocidad/.test(i.effortGuidance ?? ''))).toBe(true);
+    expect(its(run({})).some((i) => /Baja en 3/.test(i.effortGuidance ?? ''))).toBe(false);
+  });
+
+  it('con biseries pedidas junta aislamientos de músculos distintos, y el plan sigue válido', () => {
+    const p = run({ supersets: 'yes', minutesPerSession: 90 });
+    const sup = p.sessions.flatMap((s) => s.blocks).filter((b) => b.type === 'superset');
+    expect(sup.length).toBeGreaterThan(0);
+    for (const b of sup) {
+      expect(b.items).toHaveLength(2);
+      expect(b.items[0].sets).toBe(b.items[1].sets);
+      expect(exOf(b.items[0].exerciseVariantId).pattern).toBe('isolation');
+    }
+    expect(run({}).sessions.flatMap((s) => s.blocks).some((b) => b.type === 'superset')).toBe(false);
+    const r = generatePlan(base({ supersets: 'yes', minutesPerSession: 90 }));
+    expect(r.status).toBe('ok');
+  });
+
+  it('inputFromDrafts lee la etapa de preferencias', () => {
+    const r = inputFromDrafts({ 2: { primaryGoal: 'muscle' }, 3: { level: 'advanced' }, 4: { days: [0, 2], minutes: 60 }, 8: { modality: 'free', excluded: ['lunge'] } }, new Set());
+    expect('input' in r && r.input).toMatchObject({ modality: 'free', excluded: ['lunge'], preferred: [] });
+  });
+});
+

@@ -1,11 +1,14 @@
 import { EXERCISES, type Exercise, type Level } from '../data/exercises';
 import { availableVariants } from './exercises';
+import { variantModality, type Modality } from './modality';
 import { validateStep, STEPS } from './onboarding';
 import type { Plan, PlanItem, PlanSession } from './plan';
 import { estimateMinutes, MIN_REPS, validatePlan, type PlanContext, type Validation } from './planValidator';
 
-export type Goal = 'strength' | 'muscle' | 'endurance' | 'general' | 'mobility';
-export type EngineInput = PlanContext & { goal: Goal };
+export type Goal = 'strength' | 'muscle' | 'strength_muscle' | 'power' | 'endurance' | 'general' | 'mobility';
+export type EngineInput = PlanContext & { goal: Goal; secondaryGoals?: Goal[]; priorityMuscles?: string[]; split?: SplitPref; sleep?: 'lt6' | '6to7' | '7plus'; pauses?: 'short' | 'normal' | 'long';
+  modality?: 'mixed' | Modality; tempo?: 'normal' | 'controlled' | 'explosive'; supersets?: 'yes' | 'no'; excluded?: string[]; preferred?: string[] };
+type SplitPref = 'auto' | 'full' | 'upper_lower' | 'ppl';
 export type GenerateResult =
   | { status: 'ok'; plan: Plan; validation: Validation }
   | { status: 'invalid'; plan: Plan; validation: Validation }
@@ -50,19 +53,32 @@ const SPLITS: Record<number, { beginner: string[]; other: string[] }> = {
   5: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'upper', 'lower'] },
   6: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'push', 'pull', 'legs'] },
 };
-const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar músculo', endurance: 'resistencia muscular', general: 'estar en forma', mobility: 'movilidad y salud articular' };
+/** Sesiones de la semana según la preferencia; si los días no la admiten, cae a la automática (`honored` = false). */
+function pickSplit(k: number, level: Level, pref: SplitPref = 'auto'): { split: string[]; honored: boolean } {
+  const auto = SPLITS[Math.min(k, 6)][level === 1 ? 'beginner' : 'other'];
+  if (pref === 'auto') return { split: auto, honored: true };
+  if (pref === 'full') return { split: Array(k).fill('full'), honored: true };
+  if (pref === 'upper_lower') return k < 2 ? { split: auto, honored: false } : { split: Array.from({ length: k }, (_, i) => (i % 2 ? 'lower' : 'upper')), honored: true };
+  return k < 3 ? { split: auto, honored: false } : { split: Array.from({ length: k }, (_, i) => ['push', 'pull', 'legs'][i % 3]), honored: true };
+}
+const REST_FACTOR = { short: 0.75, normal: 1, long: 1.25 };
+const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar músculo', strength_muscle: 'fuerza e hipertrofia', power: 'potencia', endurance: 'resistencia muscular', general: 'estar en forma', mobility: 'movilidad y salud articular' };
 const LEVEL_LABEL: Record<Level, string> = { 1: 'principiante', 2: 'intermedio', 3: 'avanzado' };
 const COMPOUND = new Set(['push_horizontal', 'push_vertical', 'pull_horizontal', 'pull_vertical', 'squat', 'hinge', 'lunge']);
 const ACCESSORY_PATTERN_OVERRIDE = new Set(['face_pull']); // patrón de tracción, pero carga ligera y repeticiones altas
 const ISOMETRIC = new Set(['plank', 'side_plank', 'wall_sit', 'dead_hang', 'copenhagen_plank']);
 
-function prescribe(ex: Exercise, goal: Goal, level: Level): Omit<PlanItem, 'exerciseVariantId'> {
+/** El objetivo principal manda en los básicos; los accesorios rotan entre los secundarios (si hay). */
+function prescribe(ex: Exercise, main: Goal, level: Level, accessoryGoal: Goal = main): Omit<PlanItem, 'exerciseVariantId'> {
   const compound = COMPOUND.has(ex.pattern) && !ACCESSORY_PATTERN_OVERRIDE.has(ex.id);
+  const goal = compound ? main : accessoryGoal;
   const L1 = level === 1;
   let sets: number, reps: [number, number], rest: number;
   if (ISOMETRIC.has(ex.id)) { sets = 3; reps = [20, 40]; rest = 45; }
   else if (ex.pattern === 'core') { sets = 3; reps = [10, 15]; rest = 60; }
   else if (goal === 'strength') [sets, reps, rest] = compound ? [L1 ? 3 : 4, L1 ? [5, 8] : [4, 6], 150] : [3, [6, 10], 90];
+  else if (goal === 'strength_muscle') [sets, reps, rest] = compound ? [L1 ? 3 : 4, [5, 8], 135] : [3, [8, 12], 80];
+  else if (goal === 'power') [sets, reps, rest] = compound ? [4, [3, 5], 150] : [3, [6, 10], 90];
   else if (goal === 'muscle') [sets, reps, rest] = compound ? [L1 ? 3 : 4, [6, 10], 120] : [3, [10, 15], 75];
   else if (goal === 'endurance') [sets, reps, rest] = compound ? [3, [12, 15], 60] : [3, [15, 20], 45];
   else [sets, reps, rest] = compound ? [3, [8, 12], 90] : [L1 ? 2 : 3, [10, 15], 60];
@@ -70,8 +86,22 @@ function prescribe(ex: Exercise, goal: Goal, level: Level): Omit<PlanItem, 'exer
   return {
     sets, repRange: [min, Math.max(min, reps[1])], restSeconds: rest,
     effortGuidance: ISOMETRIC.has(ex.id) ? 'Segundos por serie; para antes de perder la técnica'
+      : goal === 'power' && compound ? 'Mueve la carga con máxima intención de velocidad; para si la barra se frena, con 2-3 repeticiones en reserva'
       : L1 ? 'Termina cada serie con 3-4 repeticiones en reserva' : 'Deja 2-3 repeticiones en reserva',
   };
+}
+
+/** Biseries: junta ejercicios de aislamiento consecutivos que cargan músculos distintos (descansa uno mientras trabaja el otro). */
+function pairAccessories(blocks: PlanSession['blocks']) {
+  const isoBlock = (b: PlanSession['blocks'][number]) => b.type === 'single' && exOf(b.items[0].exerciseVariantId)?.pattern === 'isolation';
+  for (let i = 0; i < blocks.length - 1; i++) {
+    const [a, b] = [blocks[i], blocks[i + 1]];
+    if (!isoBlock(a) || !isoBlock(b)) continue;
+    const shared = exOf(a.items[0].exerciseVariantId)!.primary.some((m) => exOf(b.items[0].exerciseVariantId)!.primary.includes(m));
+    if (shared) continue;
+    const sets = Math.min(a.items[0].sets, b.items[0].sets);
+    blocks.splice(i, 2, { type: 'superset', items: [{ ...a.items[0], sets }, { ...b.items[0], sets }] });
+  }
 }
 
 /** Elige `k` días repartidos de forma uniforme entre los disponibles (descansos neutros entre medias). */
@@ -89,20 +119,35 @@ export function generatePlan(input: EngineInput): GenerateResult {
   if (input.minutesPerSession < 20) reasons.push('El tiempo por sesión es demasiado corto para un plan útil (mínimo 20 minutos).');
   if (reasons.length) return { status: 'insufficient', reasons };
 
-  const { level, goal, have, limitations } = input;
+  const { level, have, limitations } = input;
+  const priority = input.priorityMuscles ?? [];
+  const warnings: string[] = [];
+  // Potencia exige base técnica: a quien empieza se le da fuerza.
+  const asked = (g: Goal): Goal => (g === 'power' && level === 1 ? 'strength' : g);
+  const goal = asked(input.goal);
+  if (goal !== input.goal) warnings.push('La potencia requiere experiencia previa; se programó fuerza hasta que subas de nivel.');
+  const secondary = (input.secondaryGoals ?? []).map(asked).filter((g) => g !== goal);
+  let accessories = 0;
+  const excluded = new Set(input.excluded ?? []);
+  const preferred = new Set(input.preferred ?? []);
+  const wantsModality = input.modality && input.modality !== 'mixed' ? input.modality : null;
+  const hasModality = (e: Exercise) => (wantsModality && availableVariants(e, have).some((v) => variantModality(v) === wantsModality) ? 1 : 0);
   const eligible = EXERCISES.filter((e) =>
-    e.level <= level && availableVariants(e, have).length > 0 &&
+    !excluded.has(e.id) && e.level <= level && availableVariants(e, have).length > 0 &&
     !e.stress.some((j) => limitations.joints.includes(j)) && !e.primary.some((m) => limitations.muscles.includes(m)));
   if (eligible.length < 4) {
     return { status: 'insufficient', reasons: ['Con tu equipo confirmado y tus precauciones hay muy pocos ejercicios posibles. Marca más equipo o revisa las precauciones.'] };
   }
 
-  const k = Math.min(input.days.length, level === 1 ? 4 : 6);
-  const split = SPLITS[Math.min(k, 6)][level === 1 ? 'beginner' : 'other'];
+  const sleepy = input.sleep === 'lt6';
+  const k = Math.min(input.days.length, level === 1 ? 4 : 6, sleepy ? 4 : 6);
+  const { split, honored } = pickSplit(k, level, input.split);
+  if (!honored) warnings.push('Con tus días disponibles no cabe la división que pediste; se usó la automática.');
+  if (sleepy) warnings.push('Duermes poco: se limitó a 4 sesiones por semana y se redujo el volumen de accesorios. Dormir más mejora la recuperación y la ganancia muscular.');
   const days = spreadDays(input.days, split.length);
   const usedInWeek = new Map<string, number>();
+  const hitsPriority = (e: Exercise) => e.primary.filter((m) => priority.includes(m)).length;
   const involvedCount = (e: Exercise) => (e.involves ?? []).filter((j) => limitations.joints.includes(j)).length;
-  const warnings: string[] = [];
   const missing = new Set<string>();
 
   const sessions: PlanSession[] = split.map((key, i) => {
@@ -113,13 +158,21 @@ export function generatePlan(input: EngineInput): GenerateResult {
       const slot = SLOTS[slotId];
       const pick = eligible
         .filter((e) => slot.match(e) && !usedHere.has(e.id))
-        .sort((a, b) => involvedCount(a) - involvedCount(b) || (usedInWeek.get(a.id) ?? 0) - (usedInWeek.get(b.id) ?? 0)
+        .sort((a, b) => involvedCount(a) - involvedCount(b) || Number(preferred.has(b.id)) - Number(preferred.has(a.id)) || hasModality(b) - hasModality(a) || hitsPriority(b) - hitsPriority(a) || (usedInWeek.get(a.id) ?? 0) - (usedInWeek.get(b.id) ?? 0)
           || Math.abs(a.level - level) - Math.abs(b.level - level) || order.get(a.id)! - order.get(b.id)!)[0];
       if (!pick) { missing.add(slot.label); continue; }
       usedHere.add(pick.id);
       usedInWeek.set(pick.id, (usedInWeek.get(pick.id) ?? 0) + 1);
-      const variant = availableVariants(pick, have)[0];
-      blocks.push({ type: 'single', items: [{ exerciseVariantId: variant.id, ...prescribe(pick, goal, level) }] });
+      const options = availableVariants(pick, have);
+      const variant = options.find((v) => variantModality(v) === wantsModality) ?? options[0];
+      const accessory = !COMPOUND.has(pick.pattern) || ACCESSORY_PATTERN_OVERRIDE.has(pick.id);
+      const item = { exerciseVariantId: variant.id, ...prescribe(pick, goal, level, accessory && secondary.length ? secondary[accessories++ % secondary.length] : goal) };
+      if (sleepy && accessory && item.sets > 2) item.sets -= 1;
+      if (input.tempo === 'controlled' && !ISOMETRIC.has(pick.id)) item.effortGuidance = `Baja en 3 segundos y sube con control. ${item.effortGuidance ?? ''}`.trim().slice(0, 200);
+      if (input.tempo === 'explosive' && !ISOMETRIC.has(pick.id)) item.effortGuidance = `Sube con la máxima velocidad y baja controlado. ${item.effortGuidance ?? ''}`.trim().slice(0, 200);
+      item.restSeconds = Math.min(600, Math.round((item.restSeconds * REST_FACTOR[input.pauses ?? 'normal']) / 5) * 5);
+      if (hitsPriority(pick) && item.sets < 5) item.sets += 1; // el recorte de tiempo y de volumen semanal lo reajusta si no cabe
+      blocks.push({ type: 'single', items: [item] });
     }
     return { day: days[i], name: tpl.name, blocks };
   });
@@ -136,8 +189,8 @@ export function generatePlan(input: EngineInput): GenerateResult {
 
   const build = (): Plan => ({
     schemaVersion: 1, mode: 'local', sessions,
-    summary: `${sessions.length} sesiones por semana de hasta ${input.minutesPerSession} min. Objetivo: ${GOAL_LABEL[goal]}. Nivel: ${LEVEL_LABEL[level]}.`.slice(0, 500),
-    rationale: sessions.map((s) => `${s.name}: ${s.blocks.map((b) => exName(b.items[0].exerciseVariantId)).join(', ')}.`).join(' ').slice(0, 1000),
+    summary: `${sessions.length} sesiones por semana de hasta ${input.minutesPerSession} min. Objetivo: ${GOAL_LABEL[goal]}${secondary.length ? ` (también ${secondary.map((g) => GOAL_LABEL[g]).join(' y ')})` : ''}. Nivel: ${LEVEL_LABEL[level]}.`.slice(0, 500),
+    rationale: sessions.map((s) => `${s.name}: ${s.blocks.map((b) => b.items.map((i) => exName(i.exerciseVariantId)).join(' + ')).join(', ')}.`).join(' ').slice(0, 1000),
   });
 
   // Recorte de volumen semanal si el validador lo marca (nunca por encima del límite).
@@ -158,10 +211,15 @@ export function generatePlan(input: EngineInput): GenerateResult {
     validation = validatePlan(build(), input);
   }
 
+  if (input.supersets === 'yes') {
+    for (const s of sessions) pairAccessories(s.blocks);
+    validation = validatePlan(build(), input);
+  }
+
   if (missing.size) warnings.push(`Sin ejercicio disponible para: ${[...missing].join(', ')}. Se omitió con tu equipo y precauciones actuales.`);
   if (limitations.joints.length || limitations.muscles.length) warnings.push('Se evitaron ejercicios que cargan las zonas con molestias que indicaste. Esto no sustituye el consejo de un profesional.');
   if (input.days.length > 6 || (level === 1 && input.days.length > 4)) warnings.push('Se dejó al menos un día de descanso; no hace falta entrenar todos los días disponibles.');
-  const involved = [...new Set(sessions.flatMap((s) => s.blocks.map((b) => exOf(b.items[0].exerciseVariantId)))
+  const involved = [...new Set(sessions.flatMap((s) => s.blocks.flatMap((b) => b.items.map((i) => exOf(i.exerciseVariantId))))
     .filter((e): e is Exercise => !!e && involvedCount(e) > 0).map((e) => e.es))];
   if (involved.length) warnings.push(`Estos ejercicios implican una zona con molestias (${involved.join(', ')}). Empieza con poca carga y sustitúyelos si molestan.`);
   warnings.push(...validation.issues.filter((i) => i.severity === 'warning' && i.code !== 'injury_involved').map((i) => i.message));
@@ -185,11 +243,16 @@ export function inputFromDrafts(drafts: Record<number, unknown>, have: ReadonlyS
     return r.data as Record<string, unknown>;
   };
   const goals = get(2), exp = get(3), avail = get(4);
+  const pref = drafts[8] !== undefined ? validateStep(8, drafts[8] as never).data ?? {} : {};
   const lim = drafts[7] !== undefined ? validateStep(7, drafts[7] as never).data ?? {} : {};
   if (reasons.length || !goals || !exp || !avail) return { reasons };
   return {
     input: {
-      goal: goals.primaryGoal as Goal, level: LEVELS[exp.level as string] ?? 1, days: avail.days as number[], minutesPerSession: avail.minutes as number,
+      goal: goals.primaryGoal as Goal, secondaryGoals: (goals.secondaryGoals as Goal[]) ?? [], priorityMuscles: (goals.priorityMuscles as string[]) ?? [],
+      split: avail.split as SplitPref | undefined, sleep: avail.sleep as EngineInput['sleep'], pauses: avail.pauses as EngineInput['pauses'],
+      modality: pref.modality as EngineInput['modality'], tempo: pref.tempo as EngineInput['tempo'], supersets: pref.supersets as EngineInput['supersets'],
+      excluded: (pref.excluded as string[]) ?? [], preferred: (pref.preferred as string[]) ?? [],
+      level: LEVELS[exp.level as string] ?? 1, days: avail.days as number[], minutesPerSession: avail.minutes as number,
       have, limitations: { joints: (lim.jointLimitations as string[]) ?? [], muscles: (lim.muscleLimitations as string[]) ?? [] },
     },
   };

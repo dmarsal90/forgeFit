@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { EXERCISES } from '../data/exercises';
 
 type Option = { value: string | number; label: string };
-export type Field = { key: string; label: string; multi?: boolean; optional?: boolean; options: Option[] };
+export type Field = { key: string; label: string; multi?: boolean; optional?: boolean; picker?: boolean; options: Option[] };
 export type Consent = { kind: string; version: number; label: string; hint: string };
 export type StepDef = { title: string; intro: string; fields: Field[]; schema: z.ZodType; consent?: Consent };
 
@@ -10,6 +11,8 @@ const ids = (o: Option[]) => o.map((x) => x.value) as [string, ...string[]];
 const goals: Option[] = [
   { value: 'strength', label: 'Ganar fuerza' },
   { value: 'muscle', label: 'Ganar músculo' },
+  { value: 'strength_muscle', label: 'Fuerza e hipertrofia' },
+  { value: 'power', label: 'Potencia (explosividad)' },
   { value: 'endurance', label: 'Resistencia muscular' },
   { value: 'general', label: 'Estar en forma' },
   { value: 'mobility', label: 'Movilidad y salud articular' },
@@ -36,7 +39,11 @@ export const LIMITATION_LABEL: Record<string, string> = Object.fromEntries([...j
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z
-  .object({ primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'), secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional() })
+  .object({
+    primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'),
+    secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional(),
+    priorityMuscles: z.array(z.enum(ids(muscleLimitations))).max(6, 'Máximo 6').optional(),
+  })
   .refine((d) => !d.secondaryGoals?.includes(d.primaryGoal), { path: ['secondaryGoals'], message: 'Ya es tu objetivo principal' });
 
 const experienceSchema = z.object({
@@ -47,15 +54,29 @@ const experienceSchema = z.object({
 const availabilitySchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).min(1, 'Elige al menos un día').max(7),
   minutes: z.number().int().min(15, 'Mínimo 15 minutos').max(180, 'Máximo 180 minutos'),
+  split: z.enum(['auto', 'full', 'upper_lower', 'ppl']).optional(),
+  sleep: z.enum(['lt6', '6to7', '7plus']).optional(),
+  pauses: z.enum(['short', 'normal', 'long']).optional(),
 });
 
-// Etapas 2–7. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
+const exerciseIds = ids(EXERCISES.map((e) => ({ value: e.id, label: e.es })));
+export const EXERCISE_NAME: Record<string, string> = Object.fromEntries(EXERCISES.map((e) => [e.id, e.es]));
+const preferencesSchema = z.object({
+  modality: z.enum(['mixed', 'free', 'machines', 'calisthenics']).optional(),
+  tempo: z.enum(['normal', 'controlled', 'explosive']).optional(),
+  supersets: z.enum(['yes', 'no']).optional(),
+  excluded: z.array(z.enum(exerciseIds)).max(40, 'Máximo 40').optional(),
+  preferred: z.array(z.enum(exerciseIds)).max(40, 'Máximo 40').optional(),
+}).refine((d) => !d.excluded?.some((x) => d.preferred?.includes(x)), { path: ['preferred'], message: 'Un ejercicio no puede ser preferido y excluido a la vez' });
+
+// Etapas 2–8. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
 export const STEPS: Record<number, StepDef> = {
   2: {
     title: 'Tus objetivos', intro: 'Elige uno principal. Los secundarios son opcionales.', schema: goalsSchema,
     fields: [
       { key: 'primaryGoal', label: 'Objetivo principal', options: goals },
       { key: 'secondaryGoals', label: 'Objetivos secundarios (hasta 2)', multi: true, optional: true, options: goals },
+      { key: 'priorityMuscles', label: 'Músculos prioritarios (hasta 6, opcional)', multi: true, optional: true, options: muscleLimitations },
     ],
   },
   3: {
@@ -74,6 +95,16 @@ export const STEPS: Record<number, StepDef> = {
     fields: [
       { key: 'days', label: 'Días en que puedes entrenar', multi: true, options: WEEKDAYS.map((label, value) => ({ value, label })) },
       { key: 'minutes', label: 'Minutos por sesión', options: [30, 45, 60, 90].map((m) => ({ value: m, label: `${m} min` })) },
+      { key: 'split', label: 'División de la semana (opcional)', optional: true, options: [
+        { value: 'auto', label: 'Que decida la app' }, { value: 'full', label: 'Cuerpo completo' },
+        { value: 'upper_lower', label: 'Torso / pierna' }, { value: 'ppl', label: 'Empuje / tirón / pierna' },
+      ] },
+      { key: 'sleep', label: 'Horas de sueño habituales (opcional)', optional: true, options: [
+        { value: 'lt6', label: 'Menos de 6 h' }, { value: '6to7', label: '6 a 7 h' }, { value: '7plus', label: '7 h o más' },
+      ] },
+      { key: 'pauses', label: 'Pausas entre series (opcional)', optional: true, options: [
+        { value: 'short', label: 'Cortas' }, { value: 'normal', label: 'Normales' }, { value: 'long', label: 'Largas' },
+      ] },
     ],
   },
   5: {
@@ -101,9 +132,26 @@ export const STEPS: Record<number, StepDef> = {
       hint: 'Opcional y desactivado por defecto. Aún no se envía nada; antes de usarlo te volveremos a avisar. Puedes revocarlo cuando quieras.',
     },
   },
+  8: {
+    title: 'Tus preferencias', intro: 'Cómo te gusta entrenar. Todo es opcional y el plan lo usa para elegir y ordenar ejercicios.', schema: preferencesSchema,
+    fields: [
+      { key: 'modality', label: 'Modalidad', optional: true, options: [
+        { value: 'mixed', label: 'Mixta' }, { value: 'free', label: 'Pesos libres' },
+        { value: 'machines', label: 'Máquinas y poleas' }, { value: 'calisthenics', label: 'Calistenia' },
+      ] },
+      { key: 'tempo', label: 'Tempo de las repeticiones', optional: true, options: [
+        { value: 'normal', label: 'Normal' }, { value: 'controlled', label: 'Controlado (bajada de 3 s)' }, { value: 'explosive', label: 'Explosivo al subir' },
+      ] },
+      { key: 'supersets', label: 'Biseries (dos ejercicios seguidos, ahorran tiempo)', optional: true, options: [
+        { value: 'yes', label: 'Sí, me gustan' }, { value: 'no', label: 'Prefiero series normales' },
+      ] },
+      { key: 'excluded', label: 'Ejercicios que no quieres hacer', multi: true, optional: true, picker: true, options: [] },
+      { key: 'preferred', label: 'Ejercicios que prefieres', multi: true, optional: true, picker: true, options: [] },
+    ],
+  },
 };
 
-export const LAST_STEP = 8;
+export const LAST_STEP = 9;
 
 export type StepValues = Record<string, string | number | (string | number)[] | undefined>;
 
@@ -121,12 +169,12 @@ export function summarize(step: number, values: StepValues): string[] {
   return STEPS[step].fields.flatMap((f) => {
     const raw = values[f.key];
     const picked = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]);
-    const labels = picked.map((v) => f.options.find((o) => o.value === v)?.label).filter(Boolean);
+    const labels = picked.map((v) => (f.picker ? EXERCISE_NAME[v as string] : f.options.find((o) => o.value === v)?.label)).filter(Boolean);
     return labels.length ? [`${f.label.replace(/ \(.*\)$/, '')}: ${labels.join(', ')}`] : [];
   });
 }
 
-const FORM_STEPS = [2, 3, 4, 5, 6, 7];
+const FORM_STEPS = [2, 3, 4, 5, 6, 7]; // obligatorias; la 8 (preferencias) es opcional y no bloquea el plan
 
 /** Etapas guardadas (de 2 a 7) y la siguiente a completar; si no falta ninguna, la revisión (8). */
 export function onboardingProgress(drafts: Record<number, unknown>) {
