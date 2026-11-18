@@ -5,7 +5,8 @@ import type { Plan, PlanItem, PlanSession } from './plan';
 import { estimateMinutes, MIN_REPS, validatePlan, type PlanContext, type Validation } from './planValidator';
 
 export type Goal = 'strength' | 'muscle' | 'strength_muscle' | 'power' | 'endurance' | 'general' | 'mobility';
-export type EngineInput = PlanContext & { goal: Goal; secondaryGoals?: Goal[]; priorityMuscles?: string[] };
+export type EngineInput = PlanContext & { goal: Goal; secondaryGoals?: Goal[]; priorityMuscles?: string[]; split?: SplitPref; sleep?: 'lt6' | '6to7' | '7plus'; pauses?: 'short' | 'normal' | 'long' };
+type SplitPref = 'auto' | 'full' | 'upper_lower' | 'ppl';
 export type GenerateResult =
   | { status: 'ok'; plan: Plan; validation: Validation }
   | { status: 'invalid'; plan: Plan; validation: Validation }
@@ -50,6 +51,15 @@ const SPLITS: Record<number, { beginner: string[]; other: string[] }> = {
   5: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'upper', 'lower'] },
   6: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'push', 'pull', 'legs'] },
 };
+/** Sesiones de la semana según la preferencia; si los días no la admiten, cae a la automática (`honored` = false). */
+function pickSplit(k: number, level: Level, pref: SplitPref = 'auto'): { split: string[]; honored: boolean } {
+  const auto = SPLITS[Math.min(k, 6)][level === 1 ? 'beginner' : 'other'];
+  if (pref === 'auto') return { split: auto, honored: true };
+  if (pref === 'full') return { split: Array(k).fill('full'), honored: true };
+  if (pref === 'upper_lower') return k < 2 ? { split: auto, honored: false } : { split: Array.from({ length: k }, (_, i) => (i % 2 ? 'lower' : 'upper')), honored: true };
+  return k < 3 ? { split: auto, honored: false } : { split: Array.from({ length: k }, (_, i) => ['push', 'pull', 'legs'][i % 3]), honored: true };
+}
+const REST_FACTOR = { short: 0.75, normal: 1, long: 1.25 };
 const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar músculo', strength_muscle: 'fuerza e hipertrofia', power: 'potencia', endurance: 'resistencia muscular', general: 'estar en forma', mobility: 'movilidad y salud articular' };
 const LEVEL_LABEL: Record<Level, string> = { 1: 'principiante', 2: 'intermedio', 3: 'avanzado' };
 const COMPOUND = new Set(['push_horizontal', 'push_vertical', 'pull_horizontal', 'pull_vertical', 'squat', 'hinge', 'lunge']);
@@ -110,8 +120,11 @@ export function generatePlan(input: EngineInput): GenerateResult {
     return { status: 'insufficient', reasons: ['Con tu equipo confirmado y tus precauciones hay muy pocos ejercicios posibles. Marca más equipo o revisa las precauciones.'] };
   }
 
-  const k = Math.min(input.days.length, level === 1 ? 4 : 6);
-  const split = SPLITS[Math.min(k, 6)][level === 1 ? 'beginner' : 'other'];
+  const sleepy = input.sleep === 'lt6';
+  const k = Math.min(input.days.length, level === 1 ? 4 : 6, sleepy ? 4 : 6);
+  const { split, honored } = pickSplit(k, level, input.split);
+  if (!honored) warnings.push('Con tus días disponibles no cabe la división que pediste; se usó la automática.');
+  if (sleepy) warnings.push('Duermes poco: se limitó a 4 sesiones por semana y se redujo el volumen de accesorios. Dormir más mejora la recuperación y la ganancia muscular.');
   const days = spreadDays(input.days, split.length);
   const usedInWeek = new Map<string, number>();
   const hitsPriority = (e: Exercise) => e.primary.filter((m) => priority.includes(m)).length;
@@ -134,6 +147,8 @@ export function generatePlan(input: EngineInput): GenerateResult {
       const variant = availableVariants(pick, have)[0];
       const accessory = !COMPOUND.has(pick.pattern) || ACCESSORY_PATTERN_OVERRIDE.has(pick.id);
       const item = { exerciseVariantId: variant.id, ...prescribe(pick, goal, level, accessory && secondary.length ? secondary[accessories++ % secondary.length] : goal) };
+      if (sleepy && accessory && item.sets > 2) item.sets -= 1;
+      item.restSeconds = Math.min(600, Math.round((item.restSeconds * REST_FACTOR[input.pauses ?? 'normal']) / 5) * 5);
       if (hitsPriority(pick) && item.sets < 5) item.sets += 1; // el recorte de tiempo y de volumen semanal lo reajusta si no cabe
       blocks.push({ type: 'single', items: [item] });
     }
@@ -206,6 +221,7 @@ export function inputFromDrafts(drafts: Record<number, unknown>, have: ReadonlyS
   return {
     input: {
       goal: goals.primaryGoal as Goal, secondaryGoals: (goals.secondaryGoals as Goal[]) ?? [], priorityMuscles: (goals.priorityMuscles as string[]) ?? [],
+      split: avail.split as SplitPref | undefined, sleep: avail.sleep as EngineInput['sleep'], pauses: avail.pauses as EngineInput['pauses'],
       level: LEVELS[exp.level as string] ?? 1, days: avail.days as number[], minutesPerSession: avail.minutes as number,
       have, limitations: { joints: (lim.jointLimitations as string[]) ?? [], muscles: (lim.muscleLimitations as string[]) ?? [] },
     },

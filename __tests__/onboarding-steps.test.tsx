@@ -31,6 +31,11 @@ describe('validación de etapas', () => {
     expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['biceps', 'triceps', 'forearm', 'deltoid', 'calves', 'core', 'glutes'] }).errors.priorityMuscles).toBeTruthy();
     expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['wings'] }).errors.priorityMuscles).toBeTruthy();
   });
+  it('disponibilidad: división, sueño y pausas opcionales y acotados', () => {
+    expect(validateStep(4, { days: [0], minutes: 60 }).data).not.toBeNull();
+    expect(validateStep(4, { days: [0], minutes: 60, split: 'ppl', sleep: 'lt6', pauses: 'long' }).data).not.toBeNull();
+    expect(validateStep(4, { days: [0], minutes: 60, split: 'bro' }).errors.split).toBeTruthy();
+  });
   it('experiencia: el nivel es obligatorio, la técnica no', () => {
     expect(validateStep(3, {}).errors.level).toBeTruthy();
     expect(validateStep(3, { level: 'beginner' }).data).toEqual({ level: 'beginner' });

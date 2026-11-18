@@ -174,3 +174,41 @@ describe('objetivos nuevos, secundarios y prioridades', () => {
     for (const s of r.plan.sessions) expect(estimateMinutes(s)).toBeLessThanOrEqual(60);
   });
 });
+
+describe('disponibilidad: división, sueño y pausas', () => {
+  const run = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const names = (p: ReturnType<typeof run>) => p.sessions.map((s) => s.name);
+
+  it('respeta la división pedida cuando los días la admiten', () => {
+    expect(names(run({ days: [0, 2, 4], split: 'ppl' }))).toEqual(['Empuje', 'Tracción', 'Piernas']);
+    expect(names(run({ days: [0, 1, 3, 4], split: 'full' }))).toEqual(Array(4).fill('Cuerpo completo'));
+    expect(names(run({ days: [0, 2, 4], split: 'upper_lower' }))).toEqual(['Tren superior', 'Tren inferior', 'Tren superior']);
+  });
+
+  it('si los días no admiten la división, usa la automática y avisa', () => {
+    const p = run({ days: [0, 3], split: 'ppl' });
+    expect(names(p)).toEqual(['Cuerpo completo', 'Cuerpo completo']);
+    expect(p.warnings?.join(' ')).toMatch(/no cabe la división/);
+  });
+
+  it('dormir menos de 6 h: máximo 4 sesiones, menos volumen y aviso', () => {
+    expect(run({ days: [0, 1, 2, 3, 4, 5], sleep: 'lt6' }).sessions.length).toBeLessThanOrEqual(4);
+    const same = { days: [0, 1, 2, 3], split: 'upper_lower' as const, minutesPerSession: 90 };
+    const normal = run(same), tired = run({ ...same, sleep: 'lt6' });
+    expect(tired.warnings?.join(' ')).toMatch(/Duermes poco/);
+    const sets = (p: typeof tired) => p.sessions.reduce((n, s) => n + s.blocks.reduce((m, b) => m + b.items[0].sets, 0), 0);
+    expect(sets(tired)).toBeLessThan(sets(normal));
+    expect(run({ sleep: '7plus' }).warnings?.join(' ') ?? '').not.toMatch(/Duermes poco/);
+  });
+
+  it('las pausas escalan el descanso entre series', () => {
+    const rest = (pauses: EngineInput['pauses']) => run({ pauses, minutesPerSession: 90 }).sessions[0].blocks[0].items[0].restSeconds;
+    expect(rest('short')).toBeLessThan(rest('normal'));
+    expect(rest('long')).toBeGreaterThan(rest('normal'));
+  });
+});
+

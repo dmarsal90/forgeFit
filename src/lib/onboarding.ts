@@ -53,6 +53,9 @@ const experienceSchema = z.object({
 const availabilitySchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).min(1, 'Elige al menos un día').max(7),
   minutes: z.number().int().min(15, 'Mínimo 15 minutos').max(180, 'Máximo 180 minutos'),
+  split: z.enum(['auto', 'full', 'upper_lower', 'ppl']).optional(),
+  sleep: z.enum(['lt6', '6to7', '7plus']).optional(),
+  pauses: z.enum(['short', 'normal', 'long']).optional(),
 });
 
 // Etapas 2–7. La 1 (perfil) es su propia pantalla y la 8 (revisión) no tiene formulario.
@@ -81,6 +84,16 @@ export const STEPS: Record<number, StepDef> = {
     fields: [
       { key: 'days', label: 'Días en que puedes entrenar', multi: true, options: WEEKDAYS.map((label, value) => ({ value, label })) },
       { key: 'minutes', label: 'Minutos por sesión', options: [30, 45, 60, 90].map((m) => ({ value: m, label: `${m} min` })) },
+      { key: 'split', label: 'División de la semana (opcional)', optional: true, options: [
+        { value: 'auto', label: 'Que decida la app' }, { value: 'full', label: 'Cuerpo completo' },
+        { value: 'upper_lower', label: 'Torso / pierna' }, { value: 'ppl', label: 'Empuje / tirón / pierna' },
+      ] },
+      { key: 'sleep', label: 'Horas de sueño habituales (opcional)', optional: true, options: [
+        { value: 'lt6', label: 'Menos de 6 h' }, { value: '6to7', label: '6 a 7 h' }, { value: '7plus', label: '7 h o más' },
+      ] },
+      { key: 'pauses', label: 'Pausas entre series (opcional)', optional: true, options: [
+        { value: 'short', label: 'Cortas' }, { value: 'normal', label: 'Normales' }, { value: 'long', label: 'Largas' },
+      ] },
     ],
   },
   5: {
