@@ -26,6 +26,11 @@ describe('validación de etapas', () => {
     expect(validateStep(2, { primaryGoal: 'strength', secondaryGoals: ['strength'] }).errors.secondaryGoals).toBeTruthy();
     expect(validateStep(2, { primaryGoal: 'strength', secondaryGoals: ['muscle'] }).data).not.toBeNull();
   });
+  it('objetivos nuevos y músculos prioritarios (máximo 3, solo músculos conocidos)', () => {
+    expect(validateStep(2, { primaryGoal: 'power', secondaryGoals: ['strength_muscle'], priorityMuscles: ['biceps', 'calves', 'core'] }).data).not.toBeNull();
+    expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['biceps', 'calves', 'core', 'glutes'] }).errors.priorityMuscles).toBeTruthy();
+    expect(validateStep(2, { primaryGoal: 'power', priorityMuscles: ['wings'] }).errors.priorityMuscles).toBeTruthy();
+  });
   it('experiencia: el nivel es obligatorio, la técnica no', () => {
     expect(validateStep(3, {}).errors.level).toBeTruthy();
     expect(validateStep(3, { level: 'beginner' }).data).toEqual({ level: 'beginner' });

@@ -10,6 +10,8 @@ const ids = (o: Option[]) => o.map((x) => x.value) as [string, ...string[]];
 const goals: Option[] = [
   { value: 'strength', label: 'Ganar fuerza' },
   { value: 'muscle', label: 'Ganar músculo' },
+  { value: 'strength_muscle', label: 'Fuerza e hipertrofia' },
+  { value: 'power', label: 'Potencia (explosividad)' },
   { value: 'endurance', label: 'Resistencia muscular' },
   { value: 'general', label: 'Estar en forma' },
   { value: 'mobility', label: 'Movilidad y salud articular' },
@@ -36,7 +38,11 @@ export const LIMITATION_LABEL: Record<string, string> = Object.fromEntries([...j
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const goalsSchema = z
-  .object({ primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'), secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional() })
+  .object({
+    primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'),
+    secondaryGoals: z.array(z.enum(goalIds)).max(2, 'Máximo 2').optional(),
+    priorityMuscles: z.array(z.enum(ids(muscleLimitations))).max(3, 'Máximo 3').optional(),
+  })
   .refine((d) => !d.secondaryGoals?.includes(d.primaryGoal), { path: ['secondaryGoals'], message: 'Ya es tu objetivo principal' });
 
 const experienceSchema = z.object({
@@ -56,6 +62,7 @@ export const STEPS: Record<number, StepDef> = {
     fields: [
       { key: 'primaryGoal', label: 'Objetivo principal', options: goals },
       { key: 'secondaryGoals', label: 'Objetivos secundarios (hasta 2)', multi: true, optional: true, options: goals },
+      { key: 'priorityMuscles', label: 'Músculos prioritarios (hasta 3, opcional)', multi: true, optional: true, options: muscleLimitations },
     ],
   },
   3: {

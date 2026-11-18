@@ -4,8 +4,8 @@ import { validateStep, STEPS } from './onboarding';
 import type { Plan, PlanItem, PlanSession } from './plan';
 import { estimateMinutes, MIN_REPS, validatePlan, type PlanContext, type Validation } from './planValidator';
 
-export type Goal = 'strength' | 'muscle' | 'endurance' | 'general' | 'mobility';
-export type EngineInput = PlanContext & { goal: Goal };
+export type Goal = 'strength' | 'muscle' | 'strength_muscle' | 'power' | 'endurance' | 'general' | 'mobility';
+export type EngineInput = PlanContext & { goal: Goal; secondaryGoals?: Goal[]; priorityMuscles?: string[] };
 export type GenerateResult =
   | { status: 'ok'; plan: Plan; validation: Validation }
   | { status: 'invalid'; plan: Plan; validation: Validation }
@@ -50,19 +50,23 @@ const SPLITS: Record<number, { beginner: string[]; other: string[] }> = {
   5: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'upper', 'lower'] },
   6: { beginner: ['upper', 'lower', 'upper', 'lower'], other: ['push', 'pull', 'legs', 'push', 'pull', 'legs'] },
 };
-const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar músculo', endurance: 'resistencia muscular', general: 'estar en forma', mobility: 'movilidad y salud articular' };
+const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar músculo', strength_muscle: 'fuerza e hipertrofia', power: 'potencia', endurance: 'resistencia muscular', general: 'estar en forma', mobility: 'movilidad y salud articular' };
 const LEVEL_LABEL: Record<Level, string> = { 1: 'principiante', 2: 'intermedio', 3: 'avanzado' };
 const COMPOUND = new Set(['push_horizontal', 'push_vertical', 'pull_horizontal', 'pull_vertical', 'squat', 'hinge', 'lunge']);
 const ACCESSORY_PATTERN_OVERRIDE = new Set(['face_pull']); // patrón de tracción, pero carga ligera y repeticiones altas
 const ISOMETRIC = new Set(['plank', 'side_plank', 'wall_sit', 'dead_hang', 'copenhagen_plank']);
 
-function prescribe(ex: Exercise, goal: Goal, level: Level): Omit<PlanItem, 'exerciseVariantId'> {
+/** El objetivo principal manda en los básicos; los accesorios rotan entre los secundarios (si hay). */
+function prescribe(ex: Exercise, main: Goal, level: Level, accessoryGoal: Goal = main): Omit<PlanItem, 'exerciseVariantId'> {
   const compound = COMPOUND.has(ex.pattern) && !ACCESSORY_PATTERN_OVERRIDE.has(ex.id);
+  const goal = compound ? main : accessoryGoal;
   const L1 = level === 1;
   let sets: number, reps: [number, number], rest: number;
   if (ISOMETRIC.has(ex.id)) { sets = 3; reps = [20, 40]; rest = 45; }
   else if (ex.pattern === 'core') { sets = 3; reps = [10, 15]; rest = 60; }
   else if (goal === 'strength') [sets, reps, rest] = compound ? [L1 ? 3 : 4, L1 ? [5, 8] : [4, 6], 150] : [3, [6, 10], 90];
+  else if (goal === 'strength_muscle') [sets, reps, rest] = compound ? [L1 ? 3 : 4, [5, 8], 135] : [3, [8, 12], 80];
+  else if (goal === 'power') [sets, reps, rest] = compound ? [4, [3, 5], 150] : [3, [6, 10], 90];
   else if (goal === 'muscle') [sets, reps, rest] = compound ? [L1 ? 3 : 4, [6, 10], 120] : [3, [10, 15], 75];
   else if (goal === 'endurance') [sets, reps, rest] = compound ? [3, [12, 15], 60] : [3, [15, 20], 45];
   else [sets, reps, rest] = compound ? [3, [8, 12], 90] : [L1 ? 2 : 3, [10, 15], 60];
@@ -70,6 +74,7 @@ function prescribe(ex: Exercise, goal: Goal, level: Level): Omit<PlanItem, 'exer
   return {
     sets, repRange: [min, Math.max(min, reps[1])], restSeconds: rest,
     effortGuidance: ISOMETRIC.has(ex.id) ? 'Segundos por serie; para antes de perder la técnica'
+      : goal === 'power' && compound ? 'Mueve la carga con máxima intención de velocidad; para si la barra se frena, con 2-3 repeticiones en reserva'
       : L1 ? 'Termina cada serie con 3-4 repeticiones en reserva' : 'Deja 2-3 repeticiones en reserva',
   };
 }
@@ -89,7 +94,15 @@ export function generatePlan(input: EngineInput): GenerateResult {
   if (input.minutesPerSession < 20) reasons.push('El tiempo por sesión es demasiado corto para un plan útil (mínimo 20 minutos).');
   if (reasons.length) return { status: 'insufficient', reasons };
 
-  const { level, goal, have, limitations } = input;
+  const { level, have, limitations } = input;
+  const priority = input.priorityMuscles ?? [];
+  const warnings: string[] = [];
+  // Potencia exige base técnica: a quien empieza se le da fuerza.
+  const asked = (g: Goal): Goal => (g === 'power' && level === 1 ? 'strength' : g);
+  const goal = asked(input.goal);
+  if (goal !== input.goal) warnings.push('La potencia requiere experiencia previa; se programó fuerza hasta que subas de nivel.');
+  const secondary = (input.secondaryGoals ?? []).map(asked).filter((g) => g !== goal);
+  let accessories = 0;
   const eligible = EXERCISES.filter((e) =>
     e.level <= level && availableVariants(e, have).length > 0 &&
     !e.stress.some((j) => limitations.joints.includes(j)) && !e.primary.some((m) => limitations.muscles.includes(m)));
@@ -101,8 +114,8 @@ export function generatePlan(input: EngineInput): GenerateResult {
   const split = SPLITS[Math.min(k, 6)][level === 1 ? 'beginner' : 'other'];
   const days = spreadDays(input.days, split.length);
   const usedInWeek = new Map<string, number>();
+  const hitsPriority = (e: Exercise) => e.primary.filter((m) => priority.includes(m)).length;
   const involvedCount = (e: Exercise) => (e.involves ?? []).filter((j) => limitations.joints.includes(j)).length;
-  const warnings: string[] = [];
   const missing = new Set<string>();
 
   const sessions: PlanSession[] = split.map((key, i) => {
@@ -113,13 +126,16 @@ export function generatePlan(input: EngineInput): GenerateResult {
       const slot = SLOTS[slotId];
       const pick = eligible
         .filter((e) => slot.match(e) && !usedHere.has(e.id))
-        .sort((a, b) => involvedCount(a) - involvedCount(b) || (usedInWeek.get(a.id) ?? 0) - (usedInWeek.get(b.id) ?? 0)
+        .sort((a, b) => involvedCount(a) - involvedCount(b) || hitsPriority(b) - hitsPriority(a) || (usedInWeek.get(a.id) ?? 0) - (usedInWeek.get(b.id) ?? 0)
           || Math.abs(a.level - level) - Math.abs(b.level - level) || order.get(a.id)! - order.get(b.id)!)[0];
       if (!pick) { missing.add(slot.label); continue; }
       usedHere.add(pick.id);
       usedInWeek.set(pick.id, (usedInWeek.get(pick.id) ?? 0) + 1);
       const variant = availableVariants(pick, have)[0];
-      blocks.push({ type: 'single', items: [{ exerciseVariantId: variant.id, ...prescribe(pick, goal, level) }] });
+      const accessory = !COMPOUND.has(pick.pattern) || ACCESSORY_PATTERN_OVERRIDE.has(pick.id);
+      const item = { exerciseVariantId: variant.id, ...prescribe(pick, goal, level, accessory && secondary.length ? secondary[accessories++ % secondary.length] : goal) };
+      if (hitsPriority(pick) && item.sets < 5) item.sets += 1; // el recorte de tiempo y de volumen semanal lo reajusta si no cabe
+      blocks.push({ type: 'single', items: [item] });
     }
     return { day: days[i], name: tpl.name, blocks };
   });
@@ -136,7 +152,7 @@ export function generatePlan(input: EngineInput): GenerateResult {
 
   const build = (): Plan => ({
     schemaVersion: 1, mode: 'local', sessions,
-    summary: `${sessions.length} sesiones por semana de hasta ${input.minutesPerSession} min. Objetivo: ${GOAL_LABEL[goal]}. Nivel: ${LEVEL_LABEL[level]}.`.slice(0, 500),
+    summary: `${sessions.length} sesiones por semana de hasta ${input.minutesPerSession} min. Objetivo: ${GOAL_LABEL[goal]}${secondary.length ? ` (también ${secondary.map((g) => GOAL_LABEL[g]).join(' y ')})` : ''}. Nivel: ${LEVEL_LABEL[level]}.`.slice(0, 500),
     rationale: sessions.map((s) => `${s.name}: ${s.blocks.map((b) => exName(b.items[0].exerciseVariantId)).join(', ')}.`).join(' ').slice(0, 1000),
   });
 
@@ -189,7 +205,8 @@ export function inputFromDrafts(drafts: Record<number, unknown>, have: ReadonlyS
   if (reasons.length || !goals || !exp || !avail) return { reasons };
   return {
     input: {
-      goal: goals.primaryGoal as Goal, level: LEVELS[exp.level as string] ?? 1, days: avail.days as number[], minutesPerSession: avail.minutes as number,
+      goal: goals.primaryGoal as Goal, secondaryGoals: (goals.secondaryGoals as Goal[]) ?? [], priorityMuscles: (goals.priorityMuscles as string[]) ?? [],
+      level: LEVELS[exp.level as string] ?? 1, days: avail.days as number[], minutesPerSession: avail.minutes as number,
       have, limitations: { joints: (lim.jointLimitations as string[]) ?? [], muscles: (lim.muscleLimitations as string[]) ?? [] },
     },
   };

@@ -105,7 +105,7 @@ describe('inputFromDrafts', () => {
   };
   it('convierte los borradores en entrada del motor', () => {
     const r = inputFromDrafts(drafts, new Set(['dumbbells_fixed_hex']));
-    expect('input' in r && r.input).toMatchObject({ goal: 'muscle', level: 3, days: [0, 1, 2, 3, 4], minutesPerSession: 60, limitations: { joints: ['elbow'], muscles: [] } });
+    expect('input' in r && r.input).toMatchObject({ goal: 'muscle', secondaryGoals: ['strength'], level: 3, days: [0, 1, 2, 3, 4], minutesPerSession: 60, limitations: { joints: ['elbow'], muscles: [] } });
   });
   it('dice qué falta si el onboarding está incompleto o inválido', () => {
     const r = inputFromDrafts({ 2: { primaryGoal: 'muscle' }, 4: { days: [], minutes: 60 } }, new Set());
@@ -126,4 +126,44 @@ it('con molestias de codo sigue habiendo tracción y press (con aviso), sin curl
   const w = (r.plan.warnings ?? []).join(' ');
   expect(w).toMatch(/implican una zona con molestias/);
   expect(w).not.toMatch(/elbow/);
+});
+
+describe('objetivos nuevos, secundarios y prioridades', () => {
+  const planOf = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const all = (p: ReturnType<typeof planOf>) => p.sessions.flatMap((s) => s.blocks.flatMap((b) => b.items));
+  const compounds = (p: ReturnType<typeof planOf>) => all(p).filter((i) => !['core', 'isolation'].includes(exOf(i.exerciseVariantId).pattern) && !['face_pull'].includes(exOf(i.exerciseVariantId).id));
+  const accessories = (p: ReturnType<typeof planOf>) => all(p).filter((i) => exOf(i.exerciseVariantId).pattern === 'isolation');
+
+  it('fuerza e hipertrofia: básicos de 5-8 repeticiones', () => {
+    for (const i of compounds(planOf({ goal: 'strength_muscle' }))) expect(i.repRange[1]).toBeLessThanOrEqual(8);
+  });
+
+  it('potencia: series cortas y explosivas; a un principiante se le da fuerza con aviso', () => {
+    const p = planOf({ goal: 'power', level: 2 });
+    for (const i of compounds(p)) expect(i.repRange[1]).toBeLessThanOrEqual(5);
+    expect(compounds(p)[0].effortGuidance).toMatch(/velocidad/);
+    const novice = planOf({ goal: 'power', level: 1, days: [0, 2, 4] });
+    expect(novice.warnings?.join(' ')).toMatch(/potencia requiere experiencia/);
+    expect(novice.summary).toMatch(/fuerza/);
+    for (const i of all(novice)) expect(i.repRange[0]).toBeGreaterThanOrEqual(5);
+  });
+
+  it('el objetivo secundario prescribe los accesorios y se refleja en el resumen', () => {
+    const p = planOf({ goal: 'strength', secondaryGoals: ['endurance'] });
+    expect(Math.max(...accessories(p).map((i) => i.repRange[1]))).toBeGreaterThanOrEqual(15);
+    for (const i of compounds(p)) expect(i.repRange[1]).toBeLessThanOrEqual(8);
+    expect(p.summary).toMatch(/también resistencia/);
+    expect(Math.max(...accessories(planOf({ goal: 'strength' })).map((i) => i.repRange[1]))).toBeLessThan(15);
+  });
+
+  it('músculos prioritarios: más series semanales para ese músculo', () => {
+    const sets = (p: ReturnType<typeof planOf>, m: string) => all(p).filter((i) => exOf(i.exerciseVariantId).primary.includes(m)).reduce((n, i) => n + i.sets, 0);
+    const plain = planOf({ minutesPerSession: 90 });
+    const prio = planOf({ minutesPerSession: 90, priorityMuscles: ['biceps'] });
+    expect(sets(prio, 'biceps')).toBeGreaterThan(sets(plain, 'biceps'));
+  });
 });
