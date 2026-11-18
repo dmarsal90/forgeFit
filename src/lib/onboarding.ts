@@ -38,6 +38,11 @@ export const MUSCLE_IDS = ids(muscleLimitations);
 export const LIMITATION_LABEL: Record<string, string> = Object.fromEntries([...jointLimitations, ...muscleLimitations].map((x) => [x.value, x.label.toLowerCase()]));
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+const disciplines: Option[] = [
+  { value: 'powerlifting', label: 'Powerlifting' }, { value: 'bodybuilding', label: 'Culturismo' }, { value: 'crossfit', label: 'CrossFit' },
+  { value: 'calisthenics', label: 'Calistenia' }, { value: 'running', label: 'Carrera' }, { value: 'team_sports', label: 'Deportes de equipo' }, { value: 'yoga', label: 'Yoga o pilates' },
+];
+
 const goalsSchema = z
   .object({
     primaryGoal: z.enum(goalIds, 'Elige un objetivo principal'),
@@ -49,6 +54,9 @@ const goalsSchema = z
 const experienceSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced'], 'Elige tu experiencia'),
   technique: z.enum(['low', 'medium', 'high']).optional(),
+  years: z.enum(['lt1', '1to3', '3to5', '5plus']).optional(),
+  rirFamiliarity: z.enum(['none', 'some', 'good']).optional(),
+  disciplines: z.array(z.enum(ids(disciplines))).max(7).optional(),
 });
 
 const availabilitySchema = z.object({
@@ -88,6 +96,13 @@ export const STEPS: Record<number, StepDef> = {
       { key: 'technique', label: 'Familiaridad con la técnica (opcional)', optional: true, options: [
         { value: 'low', label: 'Poca' }, { value: 'medium', label: 'Media' }, { value: 'high', label: 'Mucha' },
       ] },
+      { key: 'years', label: 'Años entrenando con constancia (opcional)', optional: true, options: [
+        { value: 'lt1', label: 'Menos de 1' }, { value: '1to3', label: '1 a 3' }, { value: '3to5', label: '3 a 5' }, { value: '5plus', label: 'Más de 5' },
+      ] },
+      { key: 'rirFamiliarity', label: 'Sabes medir el esfuerzo con RIR o RPE (opcional)', optional: true, options: [
+        { value: 'none', label: 'No sé qué es' }, { value: 'some', label: 'Lo conozco un poco' }, { value: 'good', label: 'Lo uso con soltura' },
+      ] },
+      { key: 'disciplines', label: 'Disciplinas que practicas o has practicado (opcional)', multi: true, optional: true, options: disciplines },
     ],
   },
   4: {

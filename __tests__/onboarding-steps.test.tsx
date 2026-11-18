@@ -47,6 +47,11 @@ describe('validación de etapas', () => {
     expect(validateStep(3, {}).errors.level).toBeTruthy();
     expect(validateStep(3, { level: 'beginner' }).data).toEqual({ level: 'beginner' });
   });
+  it('experiencia: años, RIR y disciplinas opcionales y acotados', () => {
+    expect(validateStep(3, { level: 'advanced', years: '5plus', rirFamiliarity: 'good', disciplines: ['powerlifting', 'yoga'] }).data).not.toBeNull();
+    expect(validateStep(3, { level: 'advanced', years: 'siempre' }).errors.years).toBeTruthy();
+    expect(validateStep(3, { level: 'advanced', disciplines: ['ajedrez'] }).errors.disciplines).toBeTruthy();
+  });
   it('disponibilidad: pide al menos un día y un tiempo válido', () => {
     expect(validateStep(4, { days: [], minutes: 45 }).errors.days).toBeTruthy();
     expect(validateStep(4, { days: [0], minutes: 5 }).errors.minutes).toBeTruthy();

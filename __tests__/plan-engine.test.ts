@@ -270,3 +270,35 @@ describe('preferencias: excluidos, preferidos, modalidad, tempo y biseries', () 
   });
 });
 
+describe('experiencia: años, RIR/RPE y disciplinas', () => {
+  const run = (over: Partial<EngineInput>) => {
+    const r = generatePlan(base(over));
+    if (r.status === 'insufficient') throw new Error('insuficiente');
+    return r.plan;
+  };
+  const its = (p: ReturnType<typeof run>) => p.sessions.flatMap((s) => s.blocks.flatMap((b) => b.items));
+  const ids = (p: ReturnType<typeof run>) => its(p).map((i) => exOf(i.exerciseVariantId).id);
+
+  it('menos de un año no recibe nivel avanzado, con aviso; con más años sí', () => {
+    const young = run({ level: 3, years: 'lt1' });
+    expect(young.summary).toMatch(/intermedio/);
+    expect(young.warnings?.join(' ')).toMatch(/menos de un año/);
+    expect(run({ level: 3, years: '5plus' }).summary).toMatch(/avanzado/);
+  });
+
+  it('RIR: quien lo domina recibe objetivo numérico; quien no, solo texto', () => {
+    const good = its(run({ rirFamiliarity: 'good' })).filter((i) => i.rir !== undefined);
+    expect(good.length).toBeGreaterThan(0);
+    expect(good[0].effortGuidance).toMatch(/^RIR \d/);
+    expect(its(run({ rirFamiliarity: 'none' })).every((i) => i.rir === undefined)).toBe(true);
+    expect(its(run({ rirFamiliarity: 'some' })).some((i) => i.rir !== undefined && !/^RIR/.test(i.effortGuidance ?? ''))).toBe(true);
+  });
+
+  it('disciplinas: powerlifting favorece los tres básicos y calistenia inclina a peso corporal salvo que elijas modalidad', () => {
+    expect(ids(run({ level: 3, disciplines: ['powerlifting'] }))).toEqual(expect.arrayContaining(['back_squat', 'bench_press', 'deadlift']));
+    const cali = (over: Partial<EngineInput>) => its(run(over)).filter((i) => variantModality(exOf(i.exerciseVariantId).variants.find((x) => x.id === i.exerciseVariantId)!) === 'calisthenics').length;
+    expect(cali({ disciplines: ['calisthenics'] })).toBeGreaterThan(cali({}));
+    expect(cali({ disciplines: ['calisthenics'], modality: 'free' })).toBeLessThan(cali({ disciplines: ['calisthenics'] }));
+  });
+});
+
