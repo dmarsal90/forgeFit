@@ -84,7 +84,7 @@ export function Field({ label, error, hint, ...props }: TextInputProps & { label
         accessibilityLabel={label}
         placeholderTextColor={colors.textMuted}
         {...props}
-        style={[s.input, error ? { borderColor: colors.error } : null]}
+        style={[s.input, props.style, error ? { borderColor: colors.error } : null]}
       />
       {error ? <Text variant="caption" style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text>
         : hint ? <Text variant="caption" muted>{hint}</Text> : null}
