@@ -1,12 +1,12 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { getProgressStats, getStrength, type ProgressStats } from '../../db/stats';
 import { useApp } from '../../features/AppContext';
 import type { ExerciseStrength } from '../../lib/strength';
 import { fmtWeight } from '../../lib/units';
 import { Card, EmptyState, Screen, Text } from '../../ui/components';
-import { space } from '../../ui/tokens';
+import { colors, radius, space } from '../../ui/tokens';
 
 export default function ProgressScreen() {
   const { db, profile } = useApp();
@@ -29,7 +29,7 @@ export default function ProgressScreen() {
       </Screen>
     );
   }
-  const { streakWeeks, week, completedTotal, volumeKg, pendingOverdue } = stats;
+  const { streakWeeks, week, completedTotal, volumeKg, pendingOverdue, muscles } = stats;
   return (
     <Screen tab>
       <Text variant="title">Progreso</Text>
@@ -48,6 +48,19 @@ export default function ProgressScreen() {
         <Text variant="subtitle">{completedTotal} {completedTotal === 1 ? 'sesión completada' : 'sesiones completadas'}</Text>
         {pendingOverdue ? <Text muted>{pendingOverdue} {pendingOverdue === 1 ? 'sesión pendiente' : 'sesiones pendientes'}. Puedes retomar tu plan cuando quieras.</Text> : null}
       </Card>
+      {muscles.length ? (
+        <Card style={{ gap: space.sm }}>
+          <Text variant="caption" muted>Series por músculo esta semana</Text>
+          {muscles.map((m) => (
+            <View key={m.muscle} accessible accessibilityLabel={`${m.label}: ${m.done} de ${m.planned} series`} style={{ gap: space.xs }}>
+              <Text>{m.label}: {m.done} / {m.planned}</Text>
+              <View style={{ height: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt }}>
+                <View style={{ height: 8, borderRadius: radius.pill, backgroundColor: colors.accent, width: `${m.planned ? Math.min(100, (m.done / m.planned) * 100) : 100}%` }} />
+              </View>
+            </View>
+          ))}
+        </Card>
+      ) : null}
       {strength.length ? (
         <Card style={{ gap: space.xs }}>
           <Text variant="caption" muted>Fuerza (1RM estimado)</Text>

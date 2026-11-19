@@ -56,6 +56,7 @@ it('muestra la fuerza por ejercicio en la unidad del perfil y despliega el histo
   mockApp = { db, profile };
   await render(<ProgressScreen />);
   // 60 kg × 10 reps → 80 kg estimados = 176.4 lb
+  expect(await screen.findByLabelText('pectoral: 1 de 7 series')).toBeTruthy();
   const row = await screen.findByLabelText('Press de banca plano: 176.4 lb, primer registro');
   fireEvent.press(row);
   expect(await screen.findByText(/132\.3 lb × 10 → 176\.4 lb/)).toBeTruthy();
