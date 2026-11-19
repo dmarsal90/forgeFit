@@ -1,4 +1,5 @@
 import { EXERCISES, type Exercise, type Level } from '../data/exercises';
+import { isEligible } from './alternatives';
 import { availableVariants } from './exercises';
 import { variantModality, type Modality } from './modality';
 import { validateStep, STEPS } from './onboarding';
@@ -139,9 +140,7 @@ export function generatePlan(raw: EngineInput): GenerateResult {
   const modality = input.modality ?? (disc.includes('calisthenics') ? 'calisthenics' : undefined);
   const wantsModality = modality && modality !== 'mixed' ? modality : null;
   const hasModality = (e: Exercise) => (wantsModality && availableVariants(e, have).some((v) => variantModality(v) === wantsModality) ? 1 : 0);
-  const eligible = EXERCISES.filter((e) =>
-    !excluded.has(e.id) && e.level <= level && availableVariants(e, have).length > 0 &&
-    !e.stress.some((j) => limitations.joints.includes(j)) && !e.primary.some((m) => limitations.muscles.includes(m)));
+  const eligible = EXERCISES.filter((e) => isEligible(e, { ...input, excluded: [...excluded] }));
   if (eligible.length < 4) {
     return { status: 'insufficient', reasons: ['Con tu equipo confirmado y tus precauciones hay muy pocos ejercicios posibles. Marca más equipo o revisa las precauciones.'] };
   }
@@ -156,6 +155,7 @@ export function generatePlan(raw: EngineInput): GenerateResult {
   const hitsPriority = (e: Exercise) => e.primary.filter((m) => priority.includes(m)).length;
   const involvedCount = (e: Exercise) => (e.involves ?? []).filter((j) => limitations.joints.includes(j)).length;
   const missing = new Set<string>();
+  const substituted = new Set<string>();
 
   const sessions: PlanSession[] = split.map((key, i) => {
     const tpl = SESSIONS[key];
@@ -163,11 +163,15 @@ export function generatePlan(raw: EngineInput): GenerateResult {
     const blocks: PlanSession['blocks'] = [];
     for (const slotId of tpl.slots) {
       const slot = SLOTS[slotId];
-      const pick = eligible
-        .filter((e) => slot.match(e) && !usedHere.has(e.id))
+      // Sin ejercicio exacto para el hueco, se usa el equivalente más cercano (mismo patrón y músculo) antes que dejarlo vacío.
+      const exact = eligible.filter((e) => slot.match(e) && !usedHere.has(e.id));
+      const refs = exact.length ? [] : EXERCISES.filter(slot.match);
+      const near = refs.length ? eligible.filter((e) => !usedHere.has(e.id) && refs.some((r) => r.pattern === e.pattern && r.primary.some((m) => e.primary.includes(m)))) : [];
+      const pick = (exact.length ? exact : near)
         .sort((a, b) => involvedCount(a) - involvedCount(b) || Number(preferred.has(b.id)) - Number(preferred.has(a.id)) || hasModality(b) - hasModality(a) || hitsPriority(b) - hitsPriority(a) || (usedInWeek.get(a.id) ?? 0) - (usedInWeek.get(b.id) ?? 0)
           || Math.abs(a.level - level) - Math.abs(b.level - level) || order.get(a.id)! - order.get(b.id)!)[0];
       if (!pick) { missing.add(slot.label); continue; }
+      if (!exact.length) substituted.add(slot.label);
       usedHere.add(pick.id);
       usedInWeek.set(pick.id, (usedInWeek.get(pick.id) ?? 0) + 1);
       const options = availableVariants(pick, have);
@@ -227,6 +231,7 @@ export function generatePlan(raw: EngineInput): GenerateResult {
     validation = validatePlan(build(), input);
   }
 
+  if (substituted.size) warnings.push(`Sin ejercicio exacto para: ${[...substituted].join(', ')}. Se usó el equivalente más cercano con tu equipo.`);
   if (missing.size) warnings.push(`Sin ejercicio disponible para: ${[...missing].join(', ')}. Se omitió con tu equipo y precauciones actuales.`);
   if (limitations.joints.length || limitations.muscles.length) warnings.push('Se evitaron ejercicios que cargan las zonas con molestias que indicaste. Esto no sustituye el consejo de un profesional.');
   if (input.days.length > 6 || (level === 1 && input.days.length > 4)) warnings.push('Se dejó al menos un día de descanso; no hace falta entrenar todos los días disponibles.');
