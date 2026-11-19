@@ -122,6 +122,12 @@ describe('reemplazos y ejercicios añadibles', () => {
     const notDup = suggestReplacements('pec_deck.machine', ctx(GYM), ['db_fly.flat']);
     expect(notDup.map((c) => c.exercise.id)).not.toContain('db_fly');
   });
+  it('no propone ni deja añadir los ejercicios que la persona excluyó', () => {
+    const c = { ...ctx(GYM), excluded: ['db_fly'] };
+    expect(suggestReplacements('pec_deck.machine', c).map((x) => x.exercise.id)).not.toContain('db_fly');
+    expect(addableExercises(c, { query: 'apertura' }).map((x) => x.exercise.id)).not.toContain('db_fly');
+    expect(suggestReplacements('pec_deck.machine', ctx(GYM)).map((x) => x.exercise.id)).toContain('db_fly');
+  });
   it('devuelve una lista vacía para un ejercicio desconocido', () => {
     expect(suggestReplacements('nada.x', ctx(GYM))).toEqual([]);
   });
