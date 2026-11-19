@@ -1,6 +1,7 @@
 import { currentStreak, type DayRow } from '../lib/streak';
 import { addDays, toDateKey, weekStart, type DateKey } from '../lib/schedule';
 import type { Db } from './index';
+import { strengthHistory, type ExerciseStrength } from '../lib/strength';
 import { loadWorkout } from './workouts';
 
 export type ProgressStats = {
@@ -35,4 +36,18 @@ export async function getProgressStats(db: Db, profileId: string, today: DateKey
     volumeKg: Math.round(volumeKg),
     pendingOverdue: training.filter((d) => d.date < today && d.status !== 'completed').length,
   };
+}
+
+const STRENGTH_WORKOUTS = 200;
+/** Fuerza histórica por ejercicio a partir de las últimas sesiones terminadas del perfil. */
+export async function getStrength(db: Db, profileId: string): Promise<ExerciseStrength[]> {
+  // shortcut: carga cada sesión terminada con loadWorkout (1 + 1 consultas por sesión), tope de 200; pasar a una consulta agregada si se nota lento.
+  const rows = await db.getAllAsync<{ id: string }>(
+    "SELECT id FROM workout_sessions WHERE profile_id = ? AND status = 'finished' ORDER BY started_at DESC LIMIT ?", [profileId, STRENGTH_WORKOUTS]);
+  const loaded: Parameters<typeof strengthHistory>[0][number][] = [];
+  for (const r of rows) {
+    const w = await loadWorkout(db, r.id);
+    if (w) loaded.push({ at: w.startedAt, session: w.session, done: w.state.done });
+  }
+  return strengthHistory(loaded);
 }
