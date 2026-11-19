@@ -302,3 +302,14 @@ describe('experiencia: años, RIR/RPE y disciplinas', () => {
   });
 });
 
+
+it('sin ejercicio exacto para un hueco usa el equivalente más cercano y lo avisa', () => {
+  // Solo barra de dominadas: no hay aislamiento de bíceps ni de isquiotibiales, pero sí tracciones y bisagras equivalentes.
+  const r = generatePlan(base({ have: new Set(['free_space', 'pullup_bar_wall']), level: 2, days: [0, 1, 2, 3] }));
+  expect(r.status).toBe('ok');
+  if (r.status === 'insufficient') return;
+  const warnings = (r.plan.warnings ?? []).join(' ');
+  expect(warnings).toMatch(/Sin ejercicio exacto para: .*bíceps.*Se usó el equivalente más cercano/);
+  expect(warnings).not.toMatch(/Sin ejercicio disponible para: [^.]*bíceps/);
+  expect(items(r).some((i) => exOf(i.exerciseVariantId).primary.includes('biceps'))).toBe(true);
+});
