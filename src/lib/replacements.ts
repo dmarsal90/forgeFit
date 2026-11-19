@@ -1,19 +1,19 @@
 import { normalize } from '../data/equipment';
 import { EXERCISES, type Exercise } from '../data/exercises';
+import { isEligible } from './alternatives';
 import { availableVariants, findVariant } from './exercises';
 import { LIMITATION_LABEL } from './onboarding';
 import type { PlanContext } from './planValidator';
 
 export type Candidate = { variantId: string; exercise: Exercise; variantLabel: string; reason: string };
 
-/** Ejercicios que el perfil puede hacer: variante disponible con su equipo, sin cargar zonas con molestias y no por encima de su nivel. */
+/** Ejercicios que el perfil puede hacer (ver `isEligible`), con su primera variante disponible. */
 function eligible(ctx: PlanContext, exclude: ReadonlySet<string>): { ex: Exercise; variantId: string; label: string }[] {
   const out: { ex: Exercise; variantId: string; label: string }[] = [];
   for (const ex of EXERCISES) {
-    if (exclude.has(ex.id) || ex.level > ctx.level) continue;
-    if (ex.stress.some((j) => ctx.limitations.joints.includes(j)) || ex.primary.some((m) => ctx.limitations.muscles.includes(m))) continue;
+    if (exclude.has(ex.id) || !isEligible(ex, ctx)) continue;
     const v = availableVariants(ex, ctx.have)[0];
-    if (v) out.push({ ex, variantId: v.id, label: v.es });
+    out.push({ ex, variantId: v.id, label: v.es });
   }
   return out;
 }

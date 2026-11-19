@@ -9,6 +9,7 @@ export type PlanContext = {
   days: readonly number[]; // 0 = lunes … 6 = domingo
   minutesPerSession: number;
   level: Level;
+  excluded?: readonly string[]; // ejercicios que la persona pidió no hacer (onboarding, preferencias)
 };
 export type Issue = { severity: 'error' | 'warning'; code: string; path: string; message: string };
 export type Validation = { ok: boolean; issues: Issue[] };

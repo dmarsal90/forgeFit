@@ -11,6 +11,6 @@ export async function loadContext(db: Db, profileId: string, environmentId: stri
   const have = new Set(Object.entries(inv).filter(([, s]) => s === 'available').map(([id]) => id));
   const r = inputFromDrafts(drafts, have);
   if (!('input' in r)) return null;
-  const { limitations, days, minutesPerSession, level } = r.input;
-  return { have, limitations, days, minutesPerSession, level };
+  const { limitations, days, minutesPerSession, level, excluded } = r.input;
+  return { have, limitations, days, minutesPerSession, level, excluded };
 }
