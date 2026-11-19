@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
-import { archiveProfile, deleteProfile, listProfiles, Profile, setActiveProfile } from '../db/profiles';
+import { archiveProfile, deleteProfile, listProfiles, Profile, setActiveProfile, setWeightUnit } from '../db/profiles';
 import { useApp } from '../features/AppContext';
 import { Button, Card, Choice, Screen, Text } from '../ui/components';
 import { space } from '../ui/tokens';
@@ -46,6 +46,13 @@ export default function Profiles() {
         {items.map((p) => (
           <View key={p.id} style={{ gap: space.xs }}>
             <Choice label={p.alias} selected={profile?.id === p.id} onPress={() => select(p)} />
+            <View style={{ flexDirection: 'row', gap: space.sm }} accessibilityRole="radiogroup">
+              {(['kg', 'lb'] as const).map((u) => (
+                <View key={u} style={{ flex: 1 }}>
+                  <Choice label={`Peso en ${u}`} selected={p.weightUnit === u} onPress={() => run(() => setWeightUnit(db, p.id, u))} />
+                </View>
+              ))}
+            </View>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <View style={{ flex: 1 }}><Button variant="ghost" label="Archivar" onPress={() => archive(p)} /></View>
               <View style={{ flex: 1 }}><Button variant="ghost" label="Eliminar" onPress={() => remove(p)} /></View>

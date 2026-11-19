@@ -156,4 +156,6 @@ export const migrations: string[] = [
      created_at TEXT NOT NULL,
      PRIMARY KEY (profile_id, equipment_id)
    );`,
+  // Fase 3 (onboarding): unidad con la que cada perfil ve y escribe pesos; en la base siempre son kg.
+  `ALTER TABLE profiles ADD COLUMN weight_unit TEXT NOT NULL DEFAULT 'kg' CHECK (weight_unit IN ('kg','lb'));`,
 ];

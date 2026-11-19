@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { newId } from '../../db/id';
 import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
+import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
 import { reduce, stepKey, stepsOf, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
 import { Button, Card, Field, Screen, Text } from '../../ui/components';
@@ -14,7 +15,8 @@ const num = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(',', 
 
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { db } = useApp();
+  const { db, profile } = useApp();
+  const unit = profile?.weightUnit ?? 'kg';
   const [w, setW] = useState<Workout | null | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
   const [tick, setTick] = useState(0);
@@ -44,14 +46,16 @@ export default function WorkoutScreen() {
   function pick(s: Step | null) {
     const d = s ? state.done[stepKey(s)] : undefined;
     setEditing(s);
-    setForm({ weight: d?.weightKg?.toString() ?? '', reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '' });
+    setForm({ weight: d?.weightKg === undefined ? '' : String(kgToUnit(d.weightKg, unit)), reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '' });
   }
 
   async function complete() {
     if (!step) return;
-    const weightKg = num(form.weight), reps = num(form.reps), rir = num(form.rir);
+    const typed = num(form.weight);
+    const weightKg = typed === undefined ? undefined : unitToKg(typed, unit);
+    const reps = num(form.reps), rir = num(form.rir);
     if (reps === undefined || !Number.isInteger(reps) || reps < 0 || reps > 200) { setError('Indica las repeticiones (0–200).'); return; }
-    if ((weightKg !== undefined && !(weightKg >= 0 && weightKg <= 1000)) || (rir !== undefined && !(Number.isInteger(rir) && rir >= 0 && rir <= 10))) { setError('Revisa el peso (0–1000 kg) y el RIR (0–10).'); return; }
+    if ((weightKg !== undefined && !(weightKg >= 0 && weightKg <= 1000)) || (rir !== undefined && !(Number.isInteger(rir) && rir >= 0 && rir <= 10))) { setError(`Revisa el peso (0–${kgToUnit(1000, unit)} ${unit}) y el RIR (0–10).`); return; }
     const base = { block: step.block, item: step.item, round: step.round, weightKg, reps, rir };
     if (editing) { await send({ type: 'correct', ...base }, await newId(db)); pick(null); return; }
     await send({ type: 'set_done', ...base }, `${id}:${stepKey(step)}`);
@@ -70,7 +74,7 @@ export default function WorkoutScreen() {
           <Text variant="subtitle" accessibilityLiveRegion="polite">Sesión terminada</Text>
           <Text>Tiempo activo: {mmss(state.activeMs)}</Text>
           <Text>Series completadas: {doneCount} de {steps.length}</Text>
-          <Text>Volumen (peso × repeticiones): {Math.round(volume)} kg</Text>
+          <Text>Volumen (peso × repeticiones): {Math.round(kgToUnit(volume, unit))} {unit}</Text>
         </Card>
         <Button label="Volver al inicio" onPress={() => router.replace('/')} />
       </Screen>
@@ -104,7 +108,7 @@ export default function WorkoutScreen() {
               </Text>
               <Text variant="title">{exName(step)}</Text>
               <Text muted>{item.repRange[0]}-{item.repRange[1]} repeticiones{item.rir !== undefined ? ` · RIR ${item.rir}` : ''}</Text>
-              <Field label="Peso (kg)" keyboardType="decimal-pad" value={form.weight} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
+              <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={form.weight} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
               <Field label="Repeticiones" keyboardType="number-pad" value={form.reps} onChangeText={(v) => setForm((f) => ({ ...f, reps: v }))} />
               <Field label="RIR (opcional)" keyboardType="number-pad" value={form.rir} onChangeText={(v) => setForm((f) => ({ ...f, rir: v }))} />
               <Button label={editing ? 'Guardar corrección' : 'Completar serie'} icon="checkmark" onPress={complete} />
@@ -126,7 +130,7 @@ export default function WorkoutScreen() {
         const d = state.done[stepKey(s)];
         return (
           <View key={stepKey(s)} style={{ gap: space.xs }}>
-            <Text>{exName(s)} · serie {s.round + 1}: {d.skipped ? 'saltada' : `${d.weightKg ?? '–'} kg × ${d.reps ?? '–'}${d.corrected ? ' (corregida)' : ''}`}</Text>
+            <Text>{exName(s)} · serie {s.round + 1}: {d.skipped ? 'saltada' : `${d.weightKg === undefined ? '–' : fmtWeight(d.weightKg, unit)} × ${d.reps ?? '–'}${d.corrected ? ' (corregida)' : ''}`}</Text>
             {state.status === 'active' && !editing ? <Button variant="ghost" label={`Corregir ${exName(s)} serie ${s.round + 1}`} onPress={() => pick(s)} /> : null}
           </View>
         );

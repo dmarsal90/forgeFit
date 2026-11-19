@@ -7,6 +7,7 @@ import { estimateMinutes, MIN_REPS, validatePlan, type PlanContext, type Validat
 
 export type Goal = 'strength' | 'muscle' | 'strength_muscle' | 'power' | 'endurance' | 'general' | 'mobility';
 export type EngineInput = PlanContext & { goal: Goal; secondaryGoals?: Goal[]; priorityMuscles?: string[]; split?: SplitPref; sleep?: 'lt6' | '6to7' | '7plus'; pauses?: 'short' | 'normal' | 'long';
+  years?: 'lt1' | '1to3' | '3to5' | '5plus'; rirFamiliarity?: 'none' | 'some' | 'good'; disciplines?: string[];
   modality?: 'mixed' | Modality; tempo?: 'normal' | 'controlled' | 'explosive'; supersets?: 'yes' | 'no'; excluded?: string[]; preferred?: string[] };
 type SplitPref = 'auto' | 'full' | 'upper_lower' | 'ppl';
 export type GenerateResult =
@@ -113,7 +114,10 @@ function spreadDays(days: readonly number[], k: number): number[] {
 
 const order = new Map(EXERCISES.map((e, i) => [e.id, i]));
 
-export function generatePlan(input: EngineInput): GenerateResult {
+export function generatePlan(raw: EngineInput): GenerateResult {
+  // Con menos de un año de práctica no se programa nivel avanzado, diga lo que diga la autovaloración.
+  const capped = raw.years === 'lt1' && raw.level === 3;
+  const input: EngineInput = capped ? { ...raw, level: 2 } : raw;
   const reasons: string[] = [];
   if (!input.days.length) reasons.push('No has indicado días de entrenamiento.');
   if (input.minutesPerSession < 20) reasons.push('El tiempo por sesión es demasiado corto para un plan útil (mínimo 20 minutos).');
@@ -121,7 +125,7 @@ export function generatePlan(input: EngineInput): GenerateResult {
 
   const { level, have, limitations } = input;
   const priority = input.priorityMuscles ?? [];
-  const warnings: string[] = [];
+  const warnings: string[] = capped ? ['Con menos de un año entrenando se programó nivel intermedio, no avanzado.'] : [];
   // Potencia exige base técnica: a quien empieza se le da fuerza.
   const asked = (g: Goal): Goal => (g === 'power' && level === 1 ? 'strength' : g);
   const goal = asked(input.goal);
@@ -129,8 +133,11 @@ export function generatePlan(input: EngineInput): GenerateResult {
   const secondary = (input.secondaryGoals ?? []).map(asked).filter((g) => g !== goal);
   let accessories = 0;
   const excluded = new Set(input.excluded ?? []);
-  const preferred = new Set(input.preferred ?? []);
-  const wantsModality = input.modality && input.modality !== 'mixed' ? input.modality : null;
+  const disc = input.disciplines ?? [];
+  // Las disciplinas orientan, no mandan: la modalidad y los preferidos explícitos tienen prioridad.
+  const preferred = new Set([...(input.preferred ?? []), ...(disc.includes('powerlifting') ? ['back_squat', 'bench_press', 'deadlift'] : [])]);
+  const modality = input.modality ?? (disc.includes('calisthenics') ? 'calisthenics' : undefined);
+  const wantsModality = modality && modality !== 'mixed' ? modality : null;
   const hasModality = (e: Exercise) => (wantsModality && availableVariants(e, have).some((v) => variantModality(v) === wantsModality) ? 1 : 0);
   const eligible = EXERCISES.filter((e) =>
     !excluded.has(e.id) && e.level <= level && availableVariants(e, have).length > 0 &&
@@ -168,6 +175,10 @@ export function generatePlan(input: EngineInput): GenerateResult {
       const accessory = !COMPOUND.has(pick.pattern) || ACCESSORY_PATTERN_OVERRIDE.has(pick.id);
       const item = { exerciseVariantId: variant.id, ...prescribe(pick, goal, level, accessory && secondary.length ? secondary[accessories++ % secondary.length] : goal) };
       if (sleepy && accessory && item.sets > 2) item.sets -= 1;
+      if (input.rirFamiliarity && input.rirFamiliarity !== 'none' && !ISOMETRIC.has(pick.id)) {
+        item.rir = level === 1 ? 3 : 2;
+        if (input.rirFamiliarity === 'good') item.effortGuidance = `RIR ${item.rir}: deja ${item.rir} repeticiones en reserva`;
+      }
       if (input.tempo === 'controlled' && !ISOMETRIC.has(pick.id)) item.effortGuidance = `Baja en 3 segundos y sube con control. ${item.effortGuidance ?? ''}`.trim().slice(0, 200);
       if (input.tempo === 'explosive' && !ISOMETRIC.has(pick.id)) item.effortGuidance = `Sube con la máxima velocidad y baja controlado. ${item.effortGuidance ?? ''}`.trim().slice(0, 200);
       item.restSeconds = Math.min(600, Math.round((item.restSeconds * REST_FACTOR[input.pauses ?? 'normal']) / 5) * 5);
@@ -249,6 +260,7 @@ export function inputFromDrafts(drafts: Record<number, unknown>, have: ReadonlyS
   return {
     input: {
       goal: goals.primaryGoal as Goal, secondaryGoals: (goals.secondaryGoals as Goal[]) ?? [], priorityMuscles: (goals.priorityMuscles as string[]) ?? [],
+      years: exp.years as EngineInput['years'], rirFamiliarity: exp.rirFamiliarity as EngineInput['rirFamiliarity'], disciplines: (exp.disciplines as string[]) ?? [],
       split: avail.split as SplitPref | undefined, sleep: avail.sleep as EngineInput['sleep'], pauses: avail.pauses as EngineInput['pauses'],
       modality: pref.modality as EngineInput['modality'], tempo: pref.tempo as EngineInput['tempo'], supersets: pref.supersets as EngineInput['supersets'],
       excluded: (pref.excluded as string[]) ?? [], preferred: (pref.preferred as string[]) ?? [],
