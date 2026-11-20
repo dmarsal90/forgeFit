@@ -1,7 +1,10 @@
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
+import { exportProfileJson } from '../db/profileBackup';
 import { archiveProfile, deleteProfile, listProfiles, Profile, setActiveProfile, setWeightUnit } from '../db/profiles';
 import { useApp } from '../features/AppContext';
+import { toDateKey } from '../lib/schedule';
+import { shareTextFile } from '../lib/shareFile';
 import { Button, Card, Choice, Screen, Text } from '../ui/components';
 import { space } from '../ui/tokens';
 import { useEffect, useState } from 'react';
@@ -38,6 +41,20 @@ export default function Profiles() {
       { text: 'Eliminar', style: 'destructive', onPress: () => run(() => deleteProfile(db, p.id), () => router.replace('/')) },
     ]);
 
+  const exportFull = (p: Profile) =>
+    Alert.alert(`Copia completa de ${p.alias}`, 'El archivo contiene sus datos personales, plan, entrenos y equipamiento, sin cifrar. Guárdalo en un lugar privado.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Exportar',
+        onPress: async () => {
+          try {
+            const shared = await shareTextFile(`forgefit-perfil-${toDateKey()}.json`, await exportProfileJson(db, p.id), 'application/json', `Copia completa de ${p.alias}`);
+            setError(shared ? null : 'Este dispositivo no puede compartir archivos.');
+          } catch { setError('No se pudo exportar la copia.'); }
+        },
+      },
+    ]);
+
   return (
     <Screen>
       <Text variant="title">¿Quién entrena?</Text>
@@ -53,6 +70,7 @@ export default function Profiles() {
                 </View>
               ))}
             </View>
+            <Button variant="secondary" label="Exportar copia completa" icon="download-outline" onPress={() => exportFull(p)} />
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <View style={{ flex: 1 }}><Button variant="ghost" label="Archivar" onPress={() => archive(p)} /></View>
               <View style={{ flex: 1 }}><Button variant="ghost" label="Eliminar" onPress={() => remove(p)} /></View>
