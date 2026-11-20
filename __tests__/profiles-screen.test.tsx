@@ -2,12 +2,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { Alert } from 'react-native';
 import Profiles from '../src/app/profiles';
 import { migrate } from '../src/db';
-import { profileBackupSchema } from '../src/db/profileBackup';
+import { exportProfileJson, MAX_PROFILE_BACKUP_CHARS, profileBackupSchema } from '../src/db/profileBackup';
 import { createProfile } from '../src/db/profiles';
 import { toDateKey } from '../src/lib/schedule';
 import { memoryDb } from '../test-utils/sqlite';
+import { seed } from '../test-utils/profileSeed';
 
 let mockApp: unknown;
+const mockFile = { text: jest.fn() };
+jest.mock('expo-file-system', () => ({ File: jest.fn(() => mockFile) }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+const Picker = jest.requireMock('expo-document-picker') as { getDocumentAsync: jest.Mock };
 const mockShare = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
@@ -53,4 +58,47 @@ it('si no se puede compartir o falla, lo dice', async () => {
   mockShare.mockRejectedValueOnce(new Error('x'));
   confirm();
   expect(await screen.findByText('No se pudo exportar la copia.')).toBeTruthy();
+});
+
+describe('restaurar copia completa', () => {
+  beforeEach(() => { mockFile.text.mockReset(); Picker.getDocumentAsync.mockReset(); });
+
+  it('restaura el archivo elegido como perfil nuevo y avisa; cancelar no hace nada', async () => {
+    const { db, a } = await seed();
+    mockApp = { db, profile: a, refresh: jest.fn() };
+    await render(<Profiles />);
+
+    Picker.getDocumentAsync.mockResolvedValueOnce({ canceled: true, assets: null });
+    await fireEvent.press(await screen.findByText('Restaurar copia completa'));
+    expect(mockFile.text).not.toHaveBeenCalled();
+
+    Picker.getDocumentAsync.mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///x.json', size: 1000 }] });
+    mockFile.text.mockResolvedValueOnce(await exportProfileJson(db, a.id));
+    await fireEvent.press(screen.getByText('Restaurar copia completa'));
+    expect(await screen.findByText(/Perfil «Ana \(restaurado\)» restaurado: 1 plan y 1 entreno\./)).toBeTruthy();
+    expect(await screen.findByText('Ana (restaurado)')).toBeTruthy(); // aparece en la lista
+  });
+
+  it('un archivo gigante, ilegible o inválido se rechaza con un mensaje y no crea perfiles', async () => {
+    const { db, a } = await seed();
+    mockApp = { db, profile: a, refresh: jest.fn() };
+    await render(<Profiles />);
+    const count = async () => (await db.getAllAsync('SELECT id FROM profiles')).length;
+    const before = await count();
+
+    Picker.getDocumentAsync.mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///x.json', size: MAX_PROFILE_BACKUP_CHARS * 4 + 1 }] });
+    await fireEvent.press(await screen.findByText('Restaurar copia completa'));
+    expect(await screen.findByText('El archivo es demasiado grande.')).toBeTruthy();
+
+    Picker.getDocumentAsync.mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///x.json', size: 5 }] });
+    mockFile.text.mockRejectedValueOnce(new Error('denegado'));
+    await fireEvent.press(screen.getByText('Restaurar copia completa'));
+    expect(await screen.findByText('No se pudo leer el archivo.')).toBeTruthy();
+
+    Picker.getDocumentAsync.mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///x.json', size: 5 }] });
+    mockFile.text.mockResolvedValueOnce('{"hola":1}');
+    await fireEvent.press(screen.getByText('Restaurar copia completa'));
+    expect(await screen.findByText(/Formato no válido/)).toBeTruthy();
+    expect(await count()).toBe(before);
+  });
 });
