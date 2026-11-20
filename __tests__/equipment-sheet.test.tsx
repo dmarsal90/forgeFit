@@ -81,3 +81,47 @@ it('en libras muestra y recibe libras, pero guarda kilos', async () => {
   expect(await screen.findByText('Guardado.')).toBeTruthy();
   expect((await getAttributes(db, env, 'bench_flat_fixed')).minKg).toBeCloseTo(20.412, 2);
 });
+
+describe('barras y discos: datos que tienen sentido', () => {
+  it('una barra solo pide su peso, con lo habitual de la olímpica, y permite aclarar el de la suya', async () => {
+    const { db, env } = await seed();
+    mockParams = { id: 'barbell_olympic_20', env };
+    await render(<EquipmentSheet />);
+    expect(await screen.findByText('Datos de la barra')).toBeTruthy();
+    expect(screen.getByText(/Lo habitual en esta barra: 20 kg/)).toBeTruthy();
+    expect(screen.queryByLabelText('Peso mínimo (kg)')).toBeNull();
+    expect(screen.queryByLabelText('Incremento (kg)')).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText('Peso de la barra (kg)'), '22,5');
+    await fireEvent.press(screen.getByText('Guardar datos'));
+    expect(await screen.findByText('Guardado.')).toBeTruthy();
+    expect(await getAttributes(db, env, 'barbell_olympic_20')).toEqual({ minKg: null, maxKg: null, stepKg: null, barKg: 22.5 });
+  });
+
+  it('una barra de las que varían (EZ, hexagonal…) no supone ningún peso y pide indicarlo', async () => {
+    const { env } = await seed();
+    mockParams = { id: 'barbell_trap_hex', env };
+    await render(<EquipmentSheet />);
+    expect(await screen.findByText(/Varía según el fabricante/)).toBeTruthy();
+  });
+
+  it('los discos piden el disco más pequeño y avisan de que se cargan por pares', async () => {
+    const { db, env } = await seed();
+    mockParams = { id: 'plates_olympic_iron', env };
+    await render(<EquipmentSheet />);
+    expect(await screen.findByText('Datos de los discos')).toBeTruthy();
+    expect(screen.getByText(/la subida total es el doble/)).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Disco más pequeño (kg)'), '1,25');
+    await fireEvent.press(screen.getByText('Guardar datos'));
+    expect(await screen.findByText('Guardado.')).toBeTruthy();
+    expect(await getAttributes(db, env, 'plates_olympic_iron')).toEqual({ minKg: null, maxKg: null, stepKg: 1.25, barKg: null });
+  });
+
+  it('en libras el valor habitual de la barra sale en libras', async () => {
+    const { db, profile, env } = await seed();
+    await db.runAsync("UPDATE profiles SET weight_unit = 'lb' WHERE id = ?", [profile.id]);
+    mockApp = { db, profile: { ...profile, weightUnit: 'lb' } };
+    mockParams = { id: 'barbell_olympic_20', env };
+    await render(<EquipmentSheet />);
+    expect(await screen.findByText(/Lo habitual en esta barra: 44.1 lb/)).toBeTruthy();
+  });
+});

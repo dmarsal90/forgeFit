@@ -7,7 +7,8 @@ import { attributesSchema, getAttributes, setAttributes } from '../../db/equipme
 import { listFavorites, setFavorite } from '../../db/favorites';
 import { getInventory, ItemState, setItemState } from '../../db/inventory';
 import { useApp } from '../../features/AppContext';
-import { kgToUnit, unitToKg } from '../../lib/units';
+import { isBar, isPlates, TYPICAL_BAR_KG } from '../../lib/loadModel';
+import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { Button, Card, Field, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
@@ -18,6 +19,25 @@ const FIELDS = [
   { key: 'barKg', label: 'Peso de la barra o soporte' },
 ] as const;
 type Key = (typeof FIELDS)[number]['key'];
+
+type Shown = { key: Key; label: string; hint?: string }[];
+/** Los datos que tienen sentido según el equipo: una barra solo tiene peso; los discos, el más pequeño; el resto, los cuatro. */
+function fieldsFor(id: string, unit: 'kg' | 'lb'): { intro: string; fields: Shown } {
+  if (isBar(id)) {
+    const typical = TYPICAL_BAR_KG[id];
+    return {
+      intro: 'Opcional. Con el peso de tu barra, las cargas que te sugerimos son posibles (barra + discos).',
+      fields: [{ key: 'barKg', label: 'Peso de la barra', hint: typical !== undefined ? `Lo habitual en esta barra: ${fmtWeight(typical, unit)}. Cámbialo si la tuya pesa distinto.` : 'Varía según el fabricante: pésala o mira el grabado. Sin este dato no se ajustan las cargas a la barra.' }],
+    };
+  }
+  if (isPlates(id)) {
+    return {
+      intro: 'Opcional. Sirve para sugerirte subidas que puedas montar con tus discos.',
+      fields: [{ key: 'stepKg', label: 'Disco más pequeño', hint: 'Se cargan por pares, uno a cada lado: la subida total es el doble.' }],
+    };
+  }
+  return { intro: 'Opcionales. Sirven para no sugerirte cargas imposibles.', fields: [...FIELDS] };
+}
 
 // Acepta coma decimal; vacío = sin dato; texto no numérico queda como NaN y falla la validación.
 const parse = (t: string) => (t.trim() === '' ? null : Number(t.trim().replace(',', '.')));
@@ -90,10 +110,10 @@ export default function EquipmentSheet() {
       </Card>
 
       <Card style={{ gap: space.md }}>
-        <Text variant="subtitle">Datos de la máquina</Text>
-        <Text variant="caption" muted>Opcionales. Sirven para no sugerirte cargas imposibles.</Text>
-        {FIELDS.map((f) => (
-          <Field key={f.key} label={`${f.label} (${unit})`} value={text[f.key]} keyboardType="decimal-pad" maxLength={7}
+        <Text variant="subtitle">{isBar(item.id) ? 'Datos de la barra' : isPlates(item.id) ? 'Datos de los discos' : 'Datos de la máquina'}</Text>
+        <Text variant="caption" muted>{fieldsFor(item.id, unit).intro}</Text>
+        {fieldsFor(item.id, unit).fields.map((f) => (
+          <Field key={f.key} label={`${f.label} (${unit})`} hint={f.hint} value={text[f.key]} keyboardType="decimal-pad" maxLength={7}
             onChangeText={(v) => { setText((t) => ({ ...t, [f.key]: v })); setSaved(false); }} />
         ))}
         {error ? <Text style={{ color: colors.error }} accessibilityLiveRegion="polite">{error}</Text> : null}

@@ -68,7 +68,7 @@ const GOAL_LABEL: Record<Goal, string> = { strength: 'fuerza', muscle: 'ganar m�
 const LEVEL_LABEL: Record<Level, string> = { 1: 'principiante', 2: 'intermedio', 3: 'avanzado' };
 const COMPOUND = new Set(['push_horizontal', 'push_vertical', 'pull_horizontal', 'pull_vertical', 'squat', 'hinge', 'lunge']);
 const ACCESSORY_PATTERN_OVERRIDE = new Set(['face_pull']); // patrón de tracción, pero carga ligera y repeticiones altas
-const ISOMETRIC = new Set(['plank', 'side_plank', 'wall_sit', 'dead_hang', 'copenhagen_plank']);
+export const ISOMETRIC = new Set(['plank', 'side_plank', 'wall_sit', 'dead_hang', 'copenhagen_plank']);
 
 /** El objetivo principal manda en los básicos; los accesorios rotan entre los secundarios (si hay). */
 function prescribe(ex: Exercise, main: Goal, level: Level, accessoryGoal: Goal = main): Omit<PlanItem, 'exerciseVariantId'> {

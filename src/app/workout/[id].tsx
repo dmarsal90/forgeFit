@@ -2,8 +2,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { newId } from '../../db/id';
+import { loadSuggestions } from '../../db/progression';
 import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
+import type { Suggestion } from '../../lib/progression';
 import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
 import { reduce, stepKey, stepsOf, type Pain, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
@@ -20,11 +22,16 @@ export default function WorkoutScreen() {
   const [w, setW] = useState<Workout | null | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
   const [tick, setTick] = useState(0);
-  const [form, setForm] = useState<{ weight: string; reps: string; rir: string; pain?: Pain }>({ weight: '', reps: '', rir: '' });
+  const [form, setForm] = useState<{ weight?: string; reps: string; rir: string; pain?: Pain }>({ reps: '', rir: '' }); // weight sin tocar (undefined) = el valor por defecto de la serie
   const [editing, setEditing] = useState<Step | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sug, setSug] = useState<Record<string, Suggestion>>({});
 
   useEffect(() => { loadWorkout(db, id).then(setW).catch(() => setW(null)); }, [db, id, tick]);
+  // Las sugerencias salen de las sesiones anteriores: se calculan una vez al abrir la sesión, no en cada serie.
+  useEffect(() => {
+    if (profile && w) loadSuggestions(db, profile.id, w.session, unit).then(setSug).catch(() => setSug({}));
+  }, [db, profile, unit, w?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   if (w === undefined) return <Screen><Text muted>Cargando…</Text></Screen>;
@@ -36,6 +43,10 @@ export default function WorkoutScreen() {
   const item = step ? session.blocks[step.block].items[step.item] : null;
   const block = step ? session.blocks[step.block] : null;
   const steps = stepsOf(session);
+  // Peso por defecto de la serie: el de la serie anterior del mismo ejercicio; en la primera, el sugerido por la progresión.
+  const prevKg = step && step.round > 0 ? state.done[stepKey({ ...step, round: step.round - 1 })]?.weightKg : undefined;
+  const defaultKg = prevKg ?? (step?.round === 0 && item ? sug[item.exerciseVariantId]?.weightKg : undefined);
+  const weightText = form.weight ?? (defaultKg === undefined ? '' : String(kgToUnit(defaultKg, unit)));
   const doneCount = Object.values(state.done).filter((d) => !d.skipped).length;
 
   async function send(e: WorkoutEvent, eventId?: string) {
@@ -46,12 +57,12 @@ export default function WorkoutScreen() {
   function pick(s: Step | null) {
     const d = s ? state.done[stepKey(s)] : undefined;
     setEditing(s);
-    setForm({ weight: d?.weightKg === undefined ? '' : String(kgToUnit(d.weightKg, unit)), reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '', pain: d?.pain });
+    setForm({ weight: s ? (d?.weightKg === undefined ? '' : String(kgToUnit(d.weightKg, unit))) : undefined, reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '', pain: d?.pain });
   }
 
   async function complete() {
     if (!step) return;
-    const typed = num(form.weight);
+    const typed = num(weightText);
     const weightKg = typed === undefined ? undefined : unitToKg(typed, unit);
     const reps = num(form.reps), rir = num(form.rir);
     if (reps === undefined || !Number.isInteger(reps) || reps < 0 || reps > 200) { setError('Indica las repeticiones (0–200).'); return; }
@@ -59,7 +70,7 @@ export default function WorkoutScreen() {
     const base = { block: step.block, item: step.item, round: step.round, weightKg, reps, rir, pain: form.pain };
     if (editing) { await send({ type: 'correct', ...base }, await newId(db)); pick(null); return; }
     await send({ type: 'set_done', ...base }, `${id}:${stepKey(step)}`);
-    setForm((f) => ({ ...f, reps: '', pain: undefined })); // el peso se conserva para la serie siguiente; la molestia es de cada serie
+    setForm((f) => ({ ...f, weight: undefined, reps: '', pain: undefined })); // cada serie parte de su peso por defecto; la molestia es de cada serie
   }
 
   const exName = (s: Step) => describeItem(session.blocks[s.block].items[s.item]).name;
@@ -108,7 +119,13 @@ export default function WorkoutScreen() {
               </Text>
               <Text variant="title">{exName(step)}</Text>
               <Text muted>{item.repRange[0]}-{item.repRange[1]} repeticiones{item.rir !== undefined ? ` · RIR ${item.rir}` : ''}</Text>
-              <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={form.weight} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
+              {!editing && sug[item.exerciseVariantId] && sug[item.exerciseVariantId].kind !== 'none' ? (
+                <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sug[item.exerciseVariantId].message} ${sug[item.exerciseVariantId].reason}`}>
+                  <Text variant="subtitle">Sugerencia: {sug[item.exerciseVariantId].message}</Text>
+                  <Text variant="caption" muted>{sug[item.exerciseVariantId].reason}</Text>
+                </View>
+              ) : null}
+              <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={weightText} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
               <Field label="Repeticiones" keyboardType="number-pad" value={form.reps} onChangeText={(v) => setForm((f) => ({ ...f, reps: v }))} />
               <Field label="RIR (opcional)" keyboardType="number-pad" value={form.rir} onChangeText={(v) => setForm((f) => ({ ...f, rir: v }))} />
               <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: space.sm }}>

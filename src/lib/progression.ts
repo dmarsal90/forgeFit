@@ -11,7 +11,7 @@ export type Suggestion = {
   message: string;
   reason: string; // por qué, con los datos de la última sesión
 };
-export type Options = { stepKg?: number; fmt?: (kg: number) => string };
+export type Options = { stepKg?: number; barKg?: number; fmt?: (kg: number) => string }; // barKg: peso de la barra (las cargas posibles son barra + múltiplos del escalón)
 
 const DEFAULT_STEP_KG = 2.5;
 const SECONDS_STEP = 5;
@@ -43,6 +43,17 @@ function summarize(s: SessionLog, t: Target): Summary | null {
 export function suggestProgression(history: readonly SessionLog[], target: Target, opts: Options = {}): Suggestion {
   const step = opts.stepKg && opts.stepKg > 0 ? opts.stepKg : DEFAULT_STEP_KG;
   const fmt = opts.fmt ?? kgText;
+  const bar = opts.barKg !== undefined && opts.barKg >= 0 ? opts.barKg : undefined;
+  const snap = (x: number) => r2((bar ?? 0) + Math.round((x - (bar ?? 0)) / step) * step); // a una carga posible: barra (o 0) + múltiplos del escalón
+  /** Carga más baja que `w` cerca de `target`, posible con el equipo y nunca por debajo de la barra; null si no se puede bajar. */
+  const lower = (w: number, target: number): number | null => {
+    const floor = bar ?? 0;
+    let x = snap(Math.max(w / 2, Math.min(target, w - step), floor));
+    if (x < w / 2) x = r2((bar ?? 0) + Math.ceil((w / 2 - (bar ?? 0)) / step) * step); // el ajuste a la rejilla no baja de la mitad
+    if (x >= w) x = r2(w - step);
+    return x >= floor && x < w ? x : null;
+  };
+  const cannotLower = (w: number): Suggestion => ({ kind: 'hold', weightKg: w, targetReps: min, message: `Repite ${fmt(w)}.`, reason: 'No se puede bajar más con este equipo (ya estás con la carga mínima).' });
   const [min, max] = target.repRange;
   const seconds = target.unit === 'seconds';
   const unitWord = seconds ? 's' : 'repeticiones';
@@ -62,9 +73,10 @@ export function suggestProgression(history: readonly SessionLog[], target: Targe
       return { kind: 'substitute', message: 'Sustituye este ejercicio.', reason: 'Marcaste dolor en dos sesiones seguidas con este ejercicio. Prueba una alternativa que no cargue esa zona.' };
     }
     if (last.pain === 'pain' || prev?.pain) {
-      const down = w === undefined ? undefined : r2(Math.max(0, w - step));
+      const down = w === undefined ? undefined : lower(w, w - step);
+      if (w !== undefined && down === null) return cannotLower(w);
       const why = last.pain === 'pain' ? 'Marcaste dolor' : 'Marcaste molestia dos sesiones seguidas';
-      return { kind: 'reduce', weightKg: down, targetReps: min, message: down === undefined ? 'Reduce la dificultad o el rango de movimiento.' : `Baja a ${fmt(down)}.`, reason: `${why}${at}. Para si continúa y consulta a un profesional si persiste.` };
+      return { kind: 'reduce', weightKg: down ?? undefined, targetReps: min, message: down === undefined || down === null ? 'Reduce la dificultad o el rango de movimiento.' : `Baja a ${fmt(down)}.`, reason: `${why}${at}. Para si continúa y consulta a un profesional si persiste.` };
     }
     return hold(w === undefined ? 'Repite el ejercicio sin forzar.' : `Repite ${fmt(w)} sin subir.`, `Marcaste molestia${at}: no se sube la carga hasta que desaparezca.`);
   }
@@ -80,7 +92,8 @@ export function suggestProgression(history: readonly SessionLog[], target: Targe
     if ((failedBefore || far) && w !== undefined) {
       // Baja al peso con el que alcanzarías el mínimo del rango (nunca menos de un escalón ni más de la mitad).
       const target = weightForReps(w, Math.max(best, 1), min + 1, step);
-      const down = r2(Math.max(w / 2, Math.min(target, w - step), 0));
+      const down = lower(w, target);
+      if (down === null) return cannotLower(w);
       return { kind: 'reduce', weightKg: down, targetReps: min, message: `Baja a ${fmt(down)}.`, reason: `${far ? `Tu mejor serie${at} fue de ${best}, muy por debajo de ${min}` : `No llegaste a ${min} repeticiones${at} dos sesiones seguidas`}.` };
     }
     return hold(w === undefined ? `Intenta llegar a ${min} repeticiones.` : `Repite ${fmt(w)} e intenta llegar a ${min} repeticiones.`, `En alguna serie hiciste menos de ${min} repeticiones${at}.`);
@@ -92,8 +105,8 @@ export function suggestProgression(history: readonly SessionLog[], target: Targe
 
   const trio = sessions.slice(-3);
   if (!allTop && trio.length === 3 && w !== undefined && trio.every((s) => same(s.weight, w)) && trio[2].total <= trio[0].total) {
-    const raw = r2(Math.round((w * 0.9) / step) * step);
-    const down = raw >= w ? r2(Math.max(0, w - step)) : raw;
+    const down = lower(w, w * 0.9);
+    if (down === null) return cannotLower(w);
     return { kind: 'deload', weightKg: down, targetReps: max, message: `Descarga: ${fmt(down)}.`, reason: `Tres sesiones${at} sin mejorar las repeticiones. Baja un 10 % y vuelve a subir.` };
   }
 
@@ -101,7 +114,7 @@ export function suggestProgression(history: readonly SessionLog[], target: Targe
     const topText = `${max} ${unitWord}`;
     if (seconds) return { kind: 'increase', targetReps: max + SECONDS_STEP, message: `Apunta a ${max + SECONDS_STEP} s.`, reason: `Hiciste ${topText} en todas las series.` };
     if (w === undefined) return { kind: 'increase', targetReps: min, message: 'Añade lastre o pasa a una variante más difícil.', reason: `Hiciste ${topText} en todas las series.` };
-    const up = r2(w + step);
+    const up = bar !== undefined && snap(w + step) > w ? snap(w + step) : r2(w + step); // sin barra conocida no se ajusta la carga actual
     return { kind: 'increase', weightKg: up, targetReps: min, message: `Sube a ${fmt(up)}.`, reason: `Hiciste ${topText}${at} en todas las series${sets.some((x) => x.rir !== undefined) ? ' y te sobraba reserva' : ''}.` };
   }
   if (allTop) return hold(w === undefined ? 'Repite el ejercicio.' : `Repite ${fmt(w)}.`, 'Completaste el rango pero alguna serie fue al fallo: consolida antes de subir.');

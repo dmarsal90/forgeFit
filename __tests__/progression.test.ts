@@ -77,7 +77,9 @@ describe('no llegar al mínimo', () => {
   });
   it('nunca sugiere un peso negativo ni bajar a menos de la mitad', () => {
     const fail = (at: number) => log(at, sets(2, [5, 4, 3]));
-    expect(suggestProgression([fail(1), fail(2)], T).weightKg).toBe(1);
+    const tiny = suggestProgression([fail(1), fail(2)], T); // 2 kg con escalón de 2,5: no hay carga posible más baja
+    expect(tiny).toMatchObject({ kind: 'hold', weightKg: 2 });
+    expect(tiny.reason).toMatch(/No se puede bajar más/);
     expect(suggestProgression([log(1, sets(100, [1, 1, 1]))], T).weightKg).toBeGreaterThanOrEqual(50);
   });
 });
