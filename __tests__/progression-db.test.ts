@@ -15,14 +15,14 @@ const session: PlanSession = {
 };
 const plan: Plan = { schemaVersion: 1, mode: 'local', sessions: [session] };
 
-async function setup(unit: 'kg' | 'lb' = 'kg') {
+async function setup(unit: 'kg' | 'lb' = 'kg', p: Plan = plan) {
   const db = memoryDb();
   await migrate(db);
   const a = await createProfile(db, { alias: 'Ana', weightUnit: unit });
   const b = await createProfile(db, { alias: 'Beto' });
   const gym = await ensureEnvironment(db, a.id, 'gym');
-  await saveActivePlan(db, a.id, plan, gym);
-  await saveActivePlan(db, b.id, plan, null);
+  await saveActivePlan(db, a.id, p, gym);
+  await saveActivePlan(db, b.id, p, null);
   await db.runAsync("UPDATE training_plans SET created_at = '2026-11-16T08:00:00'");
   for (const p of [a, b]) await ensureHorizon(db, p.id, '2026-11-16', '2026-11-16');
   return { db, a, b, gym };
@@ -40,14 +40,63 @@ it('sin historial no hay base; con la sesión anterior completa sugiere subir un
   expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 62.5, message: 'Sube a 62.5 kg.' });
 });
 
-it('usa el escalón de la ficha del equipo del entorno del plan, el menor de los que usa el ejercicio', async () => {
+it('con barra y discos: el escalón es el doble del disco más pequeño y la barra se tiene en cuenta; solo cuenta lo que tienes', async () => {
   const { db, a, gym } = await setup();
   await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
   await setItemState(db, gym, 'barbell_olympic_20', 'available');
   await setItemState(db, gym, 'plates_olympic_iron', 'available');
-  await setAttributes(db, gym, 'barbell_olympic_20', { minKg: null, maxKg: null, stepKg: 2, barKg: 20 });
+  await setAttributes(db, gym, 'plates_olympic_iron', { minKg: null, maxKg: null, stepKg: 1.25, barKg: null }); // disco de 1,25 kg → 2,5 kg por par
+  expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 62.5 });
+
+  // con discos fraccionales de 0,5 kg el salto es de 1 kg
+  await setItemState(db, gym, 'plates_fractional', 'available');
+  await setAttributes(db, gym, 'plates_fractional', { minKg: null, maxKg: null, stepKg: 0.5, barKg: null });
+  expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 61 });
+
+  // unos discos que NO tiene (aunque tengan ficha) no cuentan
+  await setItemState(db, gym, 'plates_fractional', 'unavailable');
+  expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ weightKg: 62.5 });
+});
+
+it('el peso de la barra manda al bajar: con una barra de 15 kg las cargas posibles son 15 + múltiplos del escalón, y nunca por debajo de la barra', async () => {
+  const { db, a, gym } = await setup();
+  await setItemState(db, gym, 'barbell_olympic_15', 'available');
+  await setItemState(db, gym, 'plates_olympic_iron', 'available');
+  await setAttributes(db, gym, 'plates_olympic_iron', { minKg: null, maxKg: null, stepKg: 2.5, barKg: null }); // pares de 5 kg
+  await train(db, a.id, '2026-11-16', 1000, [3, 2, 1], 62.5); // muy por debajo del rango
+  const s = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+  expect(s.kind).toBe('reduce');
+  expect(((s.weightKg as number) - 15) % 5).toBeCloseTo(0, 5); // 15 + n × 5
+  expect(s.weightKg).toBeGreaterThanOrEqual(30);
+  expect(s.weightKg).toBeLessThan(62.5);
+});
+
+it('una barra sin peso conocido o varias barras distintas no se suponen: sin ajuste a la barra', async () => {
+  const { db, a, gym } = await setup();
+  await train(db, a.id, '2026-11-16', 1000, [3, 2, 1], 61);
+  await setItemState(db, gym, 'plates_olympic_iron', 'available');
   await setAttributes(db, gym, 'plates_olympic_iron', { minKg: null, maxKg: null, stepKg: 1.25, barKg: null });
-  expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 61.25 });
+  await setItemState(db, gym, 'barbell_olympic_20', 'available');
+  await setItemState(db, gym, 'barbell_olympic_15', 'available'); // dos barras posibles con pesos distintos: ambiguo
+  const ambiguous = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+  expect(ambiguous.kind).toBe('reduce'); // bajó, pero sin rejilla de barra: múltiplo del escalón desde 0
+  expect(((ambiguous.weightKg as number) / 2.5) % 1).toBeCloseTo(0, 5);
+
+  await setItemState(db, gym, 'barbell_olympic_15', null);
+  await setAttributes(db, gym, 'barbell_olympic_20', { minKg: null, maxKg: null, stepKg: null, barKg: 22 }); // la persona aclara el peso de SU barra
+  const clarified = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+  expect(((clarified.weightKg as number) - 22) % 2.5).toBeCloseTo(0, 5);
+});
+
+it('mancuernas y máquinas: el menor incremento de las fichas de lo que tiene', async () => {
+  const dbSession: PlanSession = { day: 0, name: 'X', blocks: [{ type: 'single', items: [{ exerciseVariantId: 'db_fly.flat', sets: 3, repRange: [6, 10], restSeconds: 60 }] }] };
+  const { db, a, gym } = await setup('kg', { schemaVersion: 1, mode: 'local', sessions: [dbSession] });
+  await setItemState(db, gym, 'dumbbells_fixed_hex', 'available');
+  await setAttributes(db, gym, 'dumbbells_fixed_hex', { minKg: null, maxKg: null, stepKg: 2, barKg: null });
+  const id = await startWorkout(db, a.id, '2026-11-16', 1000);
+  for (const [round, reps] of [10, 10, 10].entries()) await recordEvent(db, id, { type: 'set_done', block: 0, item: 0, round, weightKg: 20, reps }, { now: 1100 + round });
+  await finishWorkout(db, id, 2000);
+  expect((await loadSuggestions(db, a.id, dbSession, 'kg'))['db_fly.flat']).toMatchObject({ kind: 'increase', weightKg: 22 });
 });
 
 it('en libras el escalón por defecto es de 5 lb y el texto sale en libras', async () => {
