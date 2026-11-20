@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { planSchema, sessionSchema } from '../lib/plan';
 import { eventSchema } from '../lib/workoutMachine';
-import { equipmentBackupSchema, exportEquipment } from './equipmentBackup';
+import { findVariant } from '../lib/exercises';
+import { STEPS, validateStep } from '../lib/onboarding';
+import { applyEquipment, equipmentBackupSchema, exportEquipment, unknownEquipment } from './equipmentBackup';
+import { newId } from './id';
 import type { Db } from './index';
-import { ENV_LABELS, type EnvKind } from './inventory';
+import { ENV_LABELS, ensureEnvironment, type EnvKind } from './inventory';
 
 /** Copia completa de un perfil (versión 1). Los ids son locales al archivo: al restaurar se regeneran. */
 const kinds = Object.keys(ENV_LABELS) as [EnvKind, ...EnvKind[]];
@@ -99,4 +102,100 @@ export async function exportProfileJson(db: Db, profileId: string): Promise<stri
   const text = JSON.stringify(await exportProfile(db, profileId));
   if (text.length > MAX_PROFILE_BACKUP_CHARS) throw new Error('La copia es demasiado grande');
   return text;
+}
+
+export type RestoreResult =
+  | { ok: true; profileId: string; alias: string; plans: number; workouts: number; droppedDrafts: number }
+  | { ok: false; error: string };
+
+const fail = (error: string): RestoreResult => ({ ok: false, error });
+const dup = (xs: readonly (string | number)[]) => new Set(xs).size !== xs.length;
+
+/** Reglas que el esquema no expresa: una copia que las rompa se rechaza entera antes de escribir nada. */
+function semanticError(b: ProfileBackup): string | null {
+  const unknown = unknownEquipment(b.equipment);
+  if (unknown) return unknown;
+  if (b.plans.filter((p) => p.status === 'active').length > 1) return 'La copia tiene más de un plan activo.';
+  const scheduledIds = b.plans.flatMap((p) => p.scheduled.map((d) => d.id));
+  if (dup(scheduledIds) || dup(b.workouts.map((w) => w.id))) return 'La copia repite identificadores.';
+  for (const p of b.plans) {
+    if (dup(p.revisions.map((r) => r.revision)) || dup(p.scheduled.map((d) => d.date))) return 'La copia repite revisiones o fechas de un plan.';
+    const missing = p.plan.sessions.flatMap((s) => s.blocks.flatMap((x) => x.items)).find((i) => !findVariant(i.exerciseVariantId));
+    if (missing) return `El plan usa un ejercicio desconocido: ${missing.exerciseVariantId}.`;
+  }
+  if (b.workouts.some((w) => dup(w.events.map((e) => e.seq)))) return 'La copia repite eventos de un entreno.';
+  return null;
+}
+
+/**
+ * Restaura una copia completa como un perfil NUEVO: nunca pisa ni fusiona con uno existente y todos los ids se regeneran.
+ * Todo o nada: valida primero y escribe en una sola transacción. No cambia el perfil activo.
+ */
+export async function importProfile(db: Db, text: string): Promise<RestoreResult> {
+  if (text.length > MAX_PROFILE_BACKUP_CHARS) return fail('El archivo es demasiado grande.');
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { return fail('El archivo no es un JSON válido.'); }
+  const parsed = profileBackupSchema.safeParse(raw);
+  if (!parsed.success) {
+    const i = parsed.error.issues[0];
+    return fail(`Formato no válido${i.path.length ? ` en «${i.path.join('.')}»` : ''}: se espera una copia completa de ForgeFit versión 1.`);
+  }
+  const b = parsed.data;
+  const bad = semanticError(b);
+  if (bad) return fail(bad);
+
+  const now = new Date().toISOString();
+  const result = { profileId: '', alias: '', droppedDrafts: 0 };
+  try {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      // Si el alias ya existe se añade «(restaurado)», con número si hace falta, para no confundir perfiles.
+      let alias = b.profile.alias;
+      for (let n = 1; await tx.getFirstAsync('SELECT 1 FROM profiles WHERE alias = ?', [alias]); n++) {
+        alias = `${b.profile.alias.slice(0, 20)} (restaurado${n > 1 ? ` ${n}` : ''})`;
+      }
+      const profileId = await newId(tx);
+      result.profileId = profileId; result.alias = alias;
+      await tx.runAsync('INSERT INTO profiles (id, alias, anatomical_model, birth_year, height_cm, weight_unit, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)',
+        [profileId, alias, b.profile.anatomicalModel, b.profile.birthYear, b.profile.heightCm, b.profile.weightUnit, now, now]);
+
+      // Un borrador que ya no cumple las reglas de su etapa se descarta (la etapa vuelve a pedirse) y se cuenta.
+      for (const [step, data] of Object.entries(b.drafts)) {
+        const n = Number(step);
+        if (!STEPS[n] || !validateStep(n, data as never).data) { result.droppedDrafts++; continue; }
+        await tx.runAsync('INSERT INTO onboarding_drafts (profile_id, step, data_json, updated_at) VALUES (?,?,?,?)', [profileId, n, JSON.stringify(data), now]);
+      }
+
+      await applyEquipment(tx, profileId, b.equipment, now);
+
+      const scheduledMap = new Map<string, string>();
+      for (const p of b.plans) {
+        const planId = await newId(tx);
+        const envId = p.environmentKind ? await ensureEnvironment(tx, profileId, p.environmentKind) : null;
+        await tx.runAsync('INSERT INTO training_plans (id, profile_id, environment_id, mode, status, plan_json, created_at, plan_version) VALUES (?,?,?,?,?,?,?,?)',
+          [planId, profileId, envId, p.mode, p.status, JSON.stringify(p.plan), p.createdAt, p.planVersion]);
+        for (const r of p.revisions) {
+          await tx.runAsync('INSERT INTO plan_revisions (id, plan_id, revision, author, reason, definition_json, created_at) VALUES (?,?,?,?,?,?,?)',
+            [await newId(tx), planId, r.revision, r.author, r.reason, JSON.stringify(r.definition), r.createdAt]);
+        }
+        for (const d of p.scheduled) {
+          const id = await newId(tx);
+          scheduledMap.set(d.id, id);
+          await tx.runAsync('INSERT INTO scheduled_sessions (id, profile_id, plan_id, date, kind, status, origin, session_json, revision) VALUES (?,?,?,?,?,?,?,?,?)',
+            [id, profileId, planId, d.date, d.kind, d.status, d.origin, d.session ? JSON.stringify(d.session) : null, d.revision]);
+        }
+      }
+
+      for (const w of b.workouts) {
+        const id = await newId(tx);
+        await tx.runAsync("INSERT INTO workout_sessions (id, profile_id, scheduled_session_id, status, started_at, ended_at, snapshot_json) VALUES (?,?,?,'finished',?,?,?)",
+          [id, profileId, w.scheduledSessionId ? scheduledMap.get(w.scheduledSessionId) ?? null : null, w.startedAt, w.endedAt, JSON.stringify(w.snapshot)]);
+        for (const e of w.events) {
+          await tx.runAsync('INSERT INTO session_events (id, session_id, seq, at, event_json) VALUES (?,?,?,?,?)', [await newId(tx), id, e.seq, e.at, JSON.stringify(e.event)]);
+        }
+      }
+    });
+  } catch {
+    return fail('No se pudo restaurar. No se creó ningún perfil.');
+  }
+  return { ok: true, ...result, plans: b.plans.length, workouts: b.workouts.length };
 }
