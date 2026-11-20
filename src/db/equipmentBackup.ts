@@ -10,7 +10,7 @@ export const MAX_BACKUP_CHARS = 1_000_000;
 const kinds = Object.keys(ENV_LABELS) as [EnvKind, ...EnvKind[]];
 const known = new Set(CATALOG.map((i) => i.id));
 
-const backupSchema = z.object({
+export const equipmentBackupSchema = z.object({
   schemaVersion: z.literal(1),
   custom: z.array(customFields.extend({ id: z.string().regex(/^user_[0-9a-f]{32}$/) })).max(500),
   favorites: z.array(z.string()).max(3000),
@@ -20,7 +20,7 @@ const backupSchema = z.object({
     attributes: z.record(z.string(), attributesSchema),
   })).max(kinds.length).refine((e) => new Set(e.map((x) => x.kind)).size === e.length, { message: 'Entornos repetidos' }),
 });
-export type EquipmentBackup = z.infer<typeof backupSchema>;
+export type EquipmentBackup = z.infer<typeof equipmentBackupSchema>;
 
 export async function exportEquipment(db: Db, profileId: string): Promise<EquipmentBackup> {
   const [custom, favs, envs] = await Promise.all([
@@ -49,7 +49,7 @@ export async function importEquipment(db: Db, profileId: string, text: string): 
   if (text.length > MAX_BACKUP_CHARS) return { ok: false, error: 'El texto es demasiado grande.' };
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return { ok: false, error: 'El texto no es un JSON válido.' }; }
-  const parsed = backupSchema.safeParse(raw);
+  const parsed = equipmentBackupSchema.safeParse(raw);
   if (!parsed.success) {
     const i = parsed.error.issues[0];
     return { ok: false, error: `Formato no válido${i.path.length ? ` en «${i.path.join('.')}»` : ''}: se espera una copia de ForgeFit versión 1.` };
