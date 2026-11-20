@@ -143,6 +143,31 @@ describe('discos indicados (kg, lb o ambos)', () => {
     expect(await get()).toBeUndefined();
   });
 
+  it('los discos estándar de 25 mm no se mezclan con los de una barra olímpica, ni al revés', async () => {
+    const { db, a, gym } = await gymSetup(); // barra olímpica de 20 kg + discos olímpicos
+    await setItemState(db, gym, 'plates_standard_25mm', 'available');
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }]);
+    await setPlates(db, gym, 'plates_standard_25mm', [{ unit: 'kg', value: 1, pairs: 2 }]); // caben en otra barra, no en esta
+    const info = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'] as { barKg: number; stock: { label?: string }[] };
+    expect(info.stock.map((p) => p.label)).toEqual(['20 kg']);
+
+    await setItemState(db, gym, 'barbell_olympic_20', null); // solo barra estándar: ahora cuentan sus discos, y su peso hay que indicarlo
+    await setItemState(db, gym, 'barbell_standard_25mm', 'available');
+    expect((await loadPlateInfo(db, a.id, session))['bench_press.barbell']).toEqual({ hint: expect.stringMatching(/cuánto pesa/) });
+    await setAttributes(db, gym, 'barbell_standard_25mm', { minKg: null, maxKg: null, stepKg: null, barKg: 7 });
+    const std = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'] as { barKg: number; stock: { label?: string }[] };
+    expect(std.barKg).toBe(7);
+    expect(std.stock.map((p) => p.label)).toEqual(['1 kg']);
+  });
+
+  it('con barras de los dos sistemas marcadas no se sabe cuál usa: lo dice, aunque los pesos se conozcan', async () => {
+    const { db, a, gym } = await gymSetup();
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }]);
+    await setItemState(db, gym, 'barbell_standard_25mm', 'available');
+    await setAttributes(db, gym, 'barbell_standard_25mm', { minKg: null, maxKg: null, stepKg: null, barKg: 20 }); // mismo peso, distinto sistema
+    expect((await loadPlateInfo(db, a.id, session))['bench_press.barbell']).toEqual({ hint: expect.stringMatching(/estándar y olímpica/) });
+  });
+
   it('un ejercicio sin barra no tiene información de discos', async () => {
     const { db, a } = await gymSetup();
     const dumb: PlanSession = { day: 0, name: 'X', blocks: [{ type: 'single', items: [{ exerciseVariantId: 'pushup.floor', sets: 3, repRange: [6, 10], restSeconds: 60 }] }] };

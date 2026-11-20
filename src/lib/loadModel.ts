@@ -3,6 +3,13 @@ import type { Req } from '../data/exercises';
 export const isBar = (id: string) => id.startsWith('barbell_');
 export const isPlates = (id: string) => id.startsWith('plates_');
 
+/** Sistema de carga: la manga de 25 mm (estándar) y la de 50 mm (olímpica) no admiten los mismos discos. */
+export type PlateSystem = 'olympic' | 'standard';
+const STANDARD_BARS = new Set(['barbell_standard_25mm', 'barbell_ez_standard', 'barbell_short']);
+export const barSystem = (barId: string): PlateSystem => (STANDARD_BARS.has(barId) ? 'standard' : 'olympic');
+/** Los discos fraccionales (0,25 a 1,25 kg) se tratan como olímpicos. */
+export const plateSystem = (plateId: string): PlateSystem => (plateId === 'plates_standard_25mm' ? 'standard' : 'olympic');
+
 // Pesos habituales cuando la persona no ha indicado el de su barra. El resto de barras (EZ, hexagonal, corta, de seguridad…) varían
 // de un fabricante a otro: no se supone ninguno y hay que indicarlo en su ficha.
 export const TYPICAL_BAR_KG: Record<string, number> = { barbell_olympic_20: 20, barbell_olympic_15: 15, barbell_powerlifting: 20 };
