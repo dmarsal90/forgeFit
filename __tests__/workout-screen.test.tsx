@@ -4,6 +4,9 @@ import { migrate } from '../src/db';
 import { saveActivePlan } from '../src/db/plans';
 import { createProfile } from '../src/db/profiles';
 import { ensureHorizon } from '../src/db/schedule';
+import { setAttributes } from '../src/db/equipmentAttributes';
+import { setPlates } from '../src/db/equipmentPlates';
+import { ensureEnvironment, setItemState } from '../src/db/inventory';
 import { finishWorkout, loadWorkout, recordEvent, startWorkout } from '../src/db/workouts';
 import type { Plan } from '../src/lib/plan';
 import { toDateKey } from '../src/lib/schedule';
@@ -158,5 +161,65 @@ describe('sugerencia de progresión', () => {
     await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ }));
     await screen.findByText(/Serie 2 de 3/);
     expect((await loadWorkout((mockApp as { db: never }).db, mockId))!.state.done['0.0.0'].weightKg).toBe(62.5);
+  });
+});
+
+describe('discos por lado', () => {
+  const benchPlan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'single' as const, items: [{ exerciseVariantId: 'bench_press.barbell', sets: 3, repRange: [6, 10] as [number, number], restSeconds: 60 }] }] })) };
+
+  async function open(unit: 'kg' | 'lb', plates: { unit: 'kg' | 'lb'; value: number; pairs: number }[], barKg?: number) {
+    const db = memoryDb();
+    await migrate(db);
+    const profile = await createProfile(db, { alias: 'Ana', weightUnit: unit });
+    const gym = await ensureEnvironment(db, profile.id, 'gym');
+    await setItemState(db, gym, 'barbell_olympic_20', 'available');
+    await setItemState(db, gym, 'plates_olympic_iron', 'available');
+    if (barKg !== undefined) await setAttributes(db, gym, 'barbell_olympic_20', { minKg: null, maxKg: null, stepKg: null, barKg, unit });
+    await setPlates(db, gym, 'plates_olympic_iron', plates);
+    await saveActivePlan(db, profile.id, benchPlan, gym);
+    await db.runAsync("UPDATE training_plans SET created_at = '2026-11-01T08:00:00'");
+    await ensureHorizon(db, profile.id, toDateKey(), toDateKey());
+    mockApp = { db, profile };
+    mockId = await startWorkout(db, profile.id, toDateKey());
+    await render(<WorkoutScreen />);
+    await screen.findByText(/Serie 1 de 3/);
+  }
+  const KG_SET = [20, 15, 10, 5, 2.5, 1.25].map((value) => ({ unit: 'kg' as const, value, pairs: 2 }));
+  const LB_SET = [45, 35, 25, 10, 5, 2.5].map((value) => ({ unit: 'lb' as const, value, pairs: 2 }));
+
+  it('dice qué discos poner por lado al escribir el peso, y avisa si no se puede montar', async () => {
+    await open('kg', KG_SET);
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '62.5');
+    expect(await screen.findByText('Por lado: 20 kg + 1.25 kg')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '20');
+    expect(await screen.findByText('Por lado: solo la barra')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '63');
+    expect(await screen.findByText('No se puede montar con tus discos. Más cerca: 62.5 kg o 65 kg.')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '15');
+    expect(await screen.findByText('Ese peso es menos que la barra.')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '');
+    expect(screen.queryByText(/Por lado/)).toBeNull();
+  });
+
+  it('discos en lb con el perfil en lb: 135 lb con barra de 45 lb = un disco de 45 por lado', async () => {
+    await open('lb', LB_SET, 45 * 0.45359237);
+    await fireEvent.changeText(screen.getByLabelText('Peso (lb)'), '135');
+    expect(await screen.findByText('Por lado: 45 lb')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Peso (lb)'), '100');
+    expect(await screen.findByText('Por lado: 25 lb + 2.5 lb')).toBeTruthy();
+  });
+
+  it('discos en kg y en lb a la vez con el perfil en kg: cada peso se monta con los discos que lo cuadran', async () => {
+    await open('kg', [...KG_SET, ...LB_SET]);
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '100');
+    expect(await screen.findByText('Por lado: 2×20 kg')).toBeTruthy(); // 40 kg por lado: dos discos de 20 (menos discos)
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '60.82');
+    expect(await screen.findByText('Por lado: 45 lb')).toBeTruthy(); // 20 kg + 2 × 45 lb
+  });
+
+  it('sin discos indicados o sin barra de peso conocido no muestra nada', async () => {
+    await open('kg', []);
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '60');
+    expect(screen.queryByText(/Por lado|No se puede montar/)).toBeNull();
   });
 });
