@@ -1,6 +1,7 @@
 import { currentStreak, type DayRow } from '../lib/streak';
 import { addDays, toDateKey, weekStart, type DateKey } from '../lib/schedule';
 import type { Db } from './index';
+import { sessionsToCsv, type ExportableWorkout } from '../lib/csv';
 import { doneSets, muscleSets, plannedSets, type MuscleSets } from '../lib/muscleVolume';
 import { planSchema } from '../lib/plan';
 import { strengthHistory, type ExerciseStrength } from '../lib/strength';
@@ -46,15 +47,25 @@ export async function getProgressStats(db: Db, profileId: string, today: DateKey
 }
 
 const STRENGTH_WORKOUTS = 200;
-/** Fuerza histórica por ejercicio a partir de las últimas sesiones terminadas del perfil. */
-export async function getStrength(db: Db, profileId: string): Promise<ExerciseStrength[]> {
-  // shortcut: carga cada sesión terminada con loadWorkout (1 + 1 consultas por sesión), tope de 200; pasar a una consulta agregada si se nota lento.
+/** Sesiones terminadas del perfil (las más recientes primero), con lo realizado en cada serie. */
+export async function loadFinishedWorkouts(db: Db, profileId: string, limit: number): Promise<ExportableWorkout[]> {
+  // shortcut: carga cada sesión terminada con loadWorkout (1 + 1 consultas por sesión); pasar a una consulta agregada si se nota lento.
   const rows = await db.getAllAsync<{ id: string }>(
-    "SELECT id FROM workout_sessions WHERE profile_id = ? AND status = 'finished' ORDER BY started_at DESC LIMIT ?", [profileId, STRENGTH_WORKOUTS]);
-  const loaded: Parameters<typeof strengthHistory>[0][number][] = [];
+    "SELECT id FROM workout_sessions WHERE profile_id = ? AND status = 'finished' ORDER BY started_at DESC LIMIT ?", [profileId, limit]);
+  const loaded: ExportableWorkout[] = [];
   for (const r of rows) {
     const w = await loadWorkout(db, r.id);
     if (w) loaded.push({ at: w.startedAt, session: w.session, done: w.state.done });
   }
-  return strengthHistory(loaded);
+  return loaded;
+}
+
+/** Fuerza histórica por ejercicio a partir de las últimas sesiones terminadas del perfil. */
+export async function getStrength(db: Db, profileId: string): Promise<ExerciseStrength[]> {
+  return strengthHistory(await loadFinishedWorkouts(db, profileId, STRENGTH_WORKOUTS));
+}
+
+/** CSV con todas las sesiones terminadas del perfil. */
+export async function exportSessionsCsv(db: Db, profileId: string): Promise<string> {
+  return sessionsToCsv(await loadFinishedWorkouts(db, profileId, 100_000));
 }

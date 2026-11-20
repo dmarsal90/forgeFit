@@ -1,12 +1,12 @@
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
-import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 import { Pressable, Share } from 'react-native';
 import { exportEquipment, importEquipment, MAX_BACKUP_CHARS } from '../db/equipmentBackup';
 import { useApp } from '../features/AppContext';
 import { toDateKey } from '../lib/schedule';
+import { shareTextFile } from '../lib/shareFile';
 import { Button, Card, Field, Screen, Text } from '../ui/components';
 import { colors } from '../ui/tokens';
 
@@ -25,11 +25,8 @@ export default function EquipmentData() {
 
   async function shareFile() {
     try {
-      if (!(await Sharing.isAvailableAsync())) { setMsg({ ok: false, text: 'Este dispositivo no puede compartir archivos. Usa «Exportar copia» (texto).' }); return; }
-      const file = new File(Paths.cache, `forgefit-equipo-${toDateKey()}.json`);
-      file.create({ overwrite: true });
-      file.write(JSON.stringify(await exportEquipment(db, profile!.id), null, 1));
-      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Copia del equipamiento de ForgeFit' });
+      const shared = await shareTextFile(`forgefit-equipo-${toDateKey()}.json`, JSON.stringify(await exportEquipment(db, profile!.id), null, 1), 'application/json', 'Copia del equipamiento de ForgeFit');
+      if (!shared) { setMsg({ ok: false, text: 'Este dispositivo no puede compartir archivos. Usa «Exportar copia» (texto).' }); return; }
       setMsg(null);
     } catch { setMsg({ ok: false, text: 'No se pudo exportar el archivo.' }); }
   }
