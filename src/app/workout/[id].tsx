@@ -2,9 +2,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { newId } from '../../db/id';
-import { loadSuggestions } from '../../db/progression';
+import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
 import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
+import { platesPerSide, type PlateResult, type PlateStock } from '../../lib/plates';
 import type { Suggestion } from '../../lib/progression';
 import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
@@ -14,6 +15,14 @@ import { colors, space } from '../../ui/tokens';
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const num = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(',', '.')));
+
+// El cálculo de discos se rehace en cada pintado (hay un reloj que repinta cada segundo): solo se recalcula si cambian sus datos.
+let lastMontage: { key: string; result: PlateResult } | null = null;
+function montageFor(targetKg: number, info: { barKg: number; stock: PlateStock[] }): PlateResult {
+  const key = `${targetKg}|${info.barKg}|${info.stock.map((p) => `${p.kg}x${p.pairs}`).join(',')}`;
+  if (lastMontage?.key !== key) lastMontage = { key, result: platesPerSide(targetKg, info.barKg, info.stock) };
+  return lastMontage.result;
+}
 
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,11 +35,14 @@ export default function WorkoutScreen() {
   const [editing, setEditing] = useState<Step | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sug, setSug] = useState<Record<string, Suggestion>>({});
+  const [plateInfo, setPlateInfo] = useState<Record<string, PlateInfo>>({});
 
   useEffect(() => { loadWorkout(db, id).then(setW).catch(() => setW(null)); }, [db, id, tick]);
   // Las sugerencias salen de las sesiones anteriores: se calculan una vez al abrir la sesión, no en cada serie.
   useEffect(() => {
-    if (profile && w) loadSuggestions(db, profile.id, w.session, unit).then(setSug).catch(() => setSug({}));
+    if (!profile || !w) return;
+    loadSuggestions(db, profile.id, w.session, unit).then(setSug).catch(() => setSug({}));
+    loadPlateInfo(db, profile.id, w.session).then(setPlateInfo).catch(() => setPlateInfo({}));
   }, [db, profile, unit, w?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
@@ -47,6 +59,15 @@ export default function WorkoutScreen() {
   const prevKg = step && step.round > 0 ? state.done[stepKey({ ...step, round: step.round - 1 })]?.weightKg : undefined;
   const defaultKg = prevKg ?? (step?.round === 0 && item ? sug[item.exerciseVariantId]?.weightKg : undefined);
   const weightText = form.weight ?? (defaultKg === undefined ? '' : String(kgToUnit(defaultKg, unit)));
+  // Qué discos poner por lado para el peso que hay escrito (solo con barra de peso conocido y discos indicados).
+  const info = item ? plateInfo[item.exerciseVariantId] : undefined;
+  const typedKg = num(weightText);
+  const montage = info && 'stock' in info && typedKg !== undefined && Number.isFinite(typedKg) && typedKg > 0 ? montageFor(unitToKg(typedKg, unit), info) : null;
+  const plateText = info && 'hint' in info ? info.hint : !montage ? null
+    : montage.status === 'ok' ? `Por lado: ${montage.perSide.length ? montage.perSide.map((p) => `${p.count > 1 ? `${p.count}×` : ''}${p.label ?? fmtWeight(p.kg, unit)}`).join(' + ') : 'solo la barra'}`
+    : montage.status === 'below_bar' ? 'Ese peso es menos que la barra.'
+    : montage.status === 'impossible' ? `No se puede montar con tus discos. Más cerca: ${[montage.below, montage.above].filter((m) => m).map((m) => fmtWeight(m!.totalKg, unit)).join(' o ')}.`
+    : null;
   const doneCount = Object.values(state.done).filter((d) => !d.skipped).length;
 
   async function send(e: WorkoutEvent, eventId?: string) {
@@ -126,6 +147,7 @@ export default function WorkoutScreen() {
                 </View>
               ) : null}
               <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={weightText} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
+              {plateText ? <Text accessibilityLiveRegion="polite" muted={montage?.status !== 'ok'}>{plateText}</Text> : null}
               <Field label="Repeticiones" keyboardType="number-pad" value={form.reps} onChangeText={(v) => setForm((f) => ({ ...f, reps: v }))} />
               <Field label="RIR (opcional)" keyboardType="number-pad" value={form.rir} onChangeText={(v) => setForm((f) => ({ ...f, rir: v }))} />
               <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: space.sm }}>

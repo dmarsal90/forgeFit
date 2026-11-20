@@ -158,4 +158,15 @@ export const migrations: string[] = [
    );`,
   // Fase 3 (onboarding): unidad con la que cada perfil ve y escribe pesos; en la base siempre son kg.
   `ALTER TABLE profiles ADD COLUMN weight_unit TEXT NOT NULL DEFAULT 'kg' CHECK (weight_unit IN ('kg','lb'));`,
+  // V9-B: unidad propia de cada equipo (null = la del perfil; los valores siguen guardándose en kg) y discos que se tienen:
+  // cada tamaño con su unidad (kg o lb, sin mezclar valores) y sus pares, por entorno y por tipo de disco.
+  `ALTER TABLE equipment_attributes ADD COLUMN unit TEXT CHECK (unit IS NULL OR unit IN ('kg','lb'));
+   CREATE TABLE equipment_plates (
+     environment_id TEXT NOT NULL REFERENCES training_environments(id) ON DELETE CASCADE,
+     equipment_id TEXT NOT NULL,
+     unit TEXT NOT NULL CHECK (unit IN ('kg','lb')),
+     value REAL NOT NULL CHECK (value > 0 AND value <= 500),
+     pairs INTEGER NOT NULL CHECK (pairs BETWEEN 1 AND 20),
+     PRIMARY KEY (environment_id, equipment_id, unit, value)
+   );`,
 ];

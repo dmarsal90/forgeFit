@@ -18,6 +18,7 @@ export const equipmentBackupSchema = z.object({
     kind: z.enum(kinds),
     items: z.record(z.string(), z.enum(['available', 'unavailable'])),
     attributes: z.record(z.string(), attributesSchema),
+    plates: z.array(z.object({ equipmentId: z.string(), unit: z.enum(['kg', 'lb']), value: z.number().gt(0).max(500), pairs: z.number().int().min(1).max(20) })).max(200).default([]),
   })).max(kinds.length).refine((e) => new Set(e.map((x) => x.kind)).size === e.length, { message: 'Entornos repetidos' }),
 });
 export type EquipmentBackup = z.infer<typeof equipmentBackupSchema>;
@@ -31,12 +32,15 @@ export async function exportEquipment(db: Db, profileId: string): Promise<Equipm
   const environments: EquipmentBackup['environments'] = [];
   for (const e of envs) {
     const items = await db.getAllAsync<{ equipment_id: string; state: 'available' | 'unavailable' }>('SELECT equipment_id, state FROM environment_inventory WHERE environment_id = ?', [e.id]);
-    const attrs = await db.getAllAsync<{ equipment_id: string; min_kg: number | null; max_kg: number | null; step_kg: number | null; bar_kg: number | null }>(
-      'SELECT equipment_id, min_kg, max_kg, step_kg, bar_kg FROM equipment_attributes WHERE environment_id = ?', [e.id]);
+    const attrs = await db.getAllAsync<{ equipment_id: string; min_kg: number | null; max_kg: number | null; step_kg: number | null; bar_kg: number | null; unit: 'kg' | 'lb' | null }>(
+      'SELECT equipment_id, min_kg, max_kg, step_kg, bar_kg, unit FROM equipment_attributes WHERE environment_id = ?', [e.id]);
+    const plates = await db.getAllAsync<{ equipment_id: string; unit: 'kg' | 'lb'; value: number; pairs: number }>(
+      'SELECT equipment_id, unit, value, pairs FROM equipment_plates WHERE environment_id = ? ORDER BY equipment_id, unit, value DESC', [e.id]);
     environments.push({
       kind: e.kind,
       items: Object.fromEntries(items.map((r) => [r.equipment_id, r.state])),
-      attributes: Object.fromEntries(attrs.map((r): [string, EquipmentAttributes] => [r.equipment_id, { minKg: r.min_kg, maxKg: r.max_kg, stepKg: r.step_kg, barKg: r.bar_kg }])),
+      attributes: Object.fromEntries(attrs.map((r): [string, EquipmentAttributes] => [r.equipment_id, { minKg: r.min_kg, maxKg: r.max_kg, stepKg: r.step_kg, barKg: r.bar_kg, unit: r.unit }])),
+      plates: plates.map((r) => ({ equipmentId: r.equipment_id, unit: r.unit, value: r.value, pairs: r.pairs })),
     });
   }
   return { schemaVersion: 1, custom: custom.map((c) => ({ id: c.id, family: c.family, name: c.name })), favorites: favs.map((f) => f.equipment_id), environments };
@@ -47,7 +51,7 @@ type EquipmentCount = { custom: number; items: number; attributes: number; favor
 /** Mensaje de error si la copia usa un equipo que ni está en el catálogo ni lo define ella; null si todo es conocido. */
 export function unknownEquipment(b: EquipmentBackup): string | null {
   const own = new Set(b.custom.map((c) => c.id));
-  const ids = [...b.favorites, ...b.environments.flatMap((e) => [...Object.keys(e.items), ...Object.keys(e.attributes)])];
+  const ids = [...b.favorites, ...b.environments.flatMap((e) => [...Object.keys(e.items), ...Object.keys(e.attributes), ...e.plates.map((p) => p.equipmentId)])];
   const unknown = ids.find((id) => !known.has(id) && !own.has(id));
   return unknown ? `La copia usa un equipo desconocido: ${unknown.startsWith(CUSTOM_PREFIX) ? 'equipo propio sin definir' : unknown}.` : null;
 }
@@ -74,9 +78,12 @@ export async function applyEquipment(tx: Db, profileId: string, b: EquipmentBack
       count.items++;
     }
     for (const [id, a] of Object.entries(e.attributes)) {
-      await tx.runAsync('INSERT OR REPLACE INTO equipment_attributes (environment_id, equipment_id, min_kg, max_kg, step_kg, bar_kg, updated_at) VALUES (?,?,?,?,?,?,?)',
-        [envId, to(id), a.minKg, a.maxKg, a.stepKg, a.barKg, now]);
+      await tx.runAsync('INSERT OR REPLACE INTO equipment_attributes (environment_id, equipment_id, min_kg, max_kg, step_kg, bar_kg, unit, updated_at) VALUES (?,?,?,?,?,?,?,?)',
+        [envId, to(id), a.minKg, a.maxKg, a.stepKg, a.barKg, a.unit, now]);
       count.attributes++;
+    }
+    for (const p of e.plates) {
+      await tx.runAsync('INSERT OR REPLACE INTO equipment_plates (environment_id, equipment_id, unit, value, pairs) VALUES (?,?,?,?,?)', [envId, to(p.equipmentId), p.unit, p.value, p.pairs]);
     }
   }
   for (const id of b.favorites) {

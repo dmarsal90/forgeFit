@@ -1,4 +1,4 @@
-import { loadModel, TYPICAL_BAR_KG } from '../src/lib/loadModel';
+import { barSystem, loadModel, plateSystem, TYPICAL_BAR_KG } from '../src/lib/loadModel';
 
 const it_ = (id: string, stepKg: number | null = null, barKg: number | null = null) => ({ id, stepKg, barKg });
 
@@ -29,5 +29,14 @@ describe('loadModel', () => {
   });
   it('los discos mandan sobre otros incrementos cuando el ejercicio se carga con barra', () => {
     expect(loadModel([it_('plates_olympic_iron', 1.25), it_('bench_flat_rack', 5)]).stepKg).toBe(2.5);
+  });
+});
+
+describe('sistemas de carga', () => {
+  it('la manga de 25 mm y la olímpica no admiten los mismos discos', () => {
+    for (const id of ['barbell_standard_25mm', 'barbell_ez_standard', 'barbell_short']) expect(barSystem(id)).toBe('standard');
+    for (const id of ['barbell_olympic_20', 'barbell_olympic_15', 'barbell_powerlifting', 'barbell_ez_olympic', 'barbell_trap_hex', 'barbell_safety_squat']) expect(barSystem(id)).toBe('olympic');
+    expect(plateSystem('plates_standard_25mm')).toBe('standard');
+    for (const id of ['plates_olympic_iron', 'plates_olympic_bumper', 'plates_olympic_competition', 'plates_fractional']) expect(plateSystem(id)).toBe('olympic');
   });
 });

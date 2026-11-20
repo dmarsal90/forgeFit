@@ -114,7 +114,8 @@ export function suggestProgression(history: readonly SessionLog[], target: Targe
     const topText = `${max} ${unitWord}`;
     if (seconds) return { kind: 'increase', targetReps: max + SECONDS_STEP, message: `Apunta a ${max + SECONDS_STEP} s.`, reason: `Hiciste ${topText} en todas las series.` };
     if (w === undefined) return { kind: 'increase', targetReps: min, message: 'Añade lastre o pasa a una variante más difícil.', reason: `Hiciste ${topText} en todas las series.` };
-    const up = bar !== undefined && snap(w + step) > w ? snap(w + step) : r2(w + step); // sin barra conocida no se ajusta la carga actual
+    // Con barra conocida, la siguiente carga posible por encima de la actual; si no, la actual más un escalón.
+    const up = bar !== undefined ? r2(bar + (Math.floor((w - bar) / step + 1e-9) + 1) * step) : r2(w + step);
     return { kind: 'increase', weightKg: up, targetReps: min, message: `Sube a ${fmt(up)}.`, reason: `Hiciste ${topText}${at} en todas las series${sets.some((x) => x.rir !== undefined) ? ' y te sobraba reserva' : ''}.` };
   }
   if (allTop) return hold(w === undefined ? 'Repite el ejercicio.' : `Repite ${fmt(w)}.`, 'Completaste el rango pero alguna serie fue al fallo: consolida antes de subir.');
