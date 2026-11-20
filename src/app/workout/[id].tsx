@@ -5,7 +5,7 @@ import { newId } from '../../db/id';
 import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
 import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
-import { platesPerSide, type PlateResult } from '../../lib/plates';
+import { platesPerSide, type PlateResult, type PlateStock } from '../../lib/plates';
 import type { Suggestion } from '../../lib/progression';
 import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
@@ -18,7 +18,7 @@ const num = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(',', 
 
 // El cálculo de discos se rehace en cada pintado (hay un reloj que repinta cada segundo): solo se recalcula si cambian sus datos.
 let lastMontage: { key: string; result: PlateResult } | null = null;
-function montageFor(targetKg: number, info: PlateInfo): PlateResult {
+function montageFor(targetKg: number, info: { barKg: number; stock: PlateStock[] }): PlateResult {
   const key = `${targetKg}|${info.barKg}|${info.stock.map((p) => `${p.kg}x${p.pairs}`).join(',')}`;
   if (lastMontage?.key !== key) lastMontage = { key, result: platesPerSide(targetKg, info.barKg, info.stock) };
   return lastMontage.result;
@@ -62,8 +62,8 @@ export default function WorkoutScreen() {
   // Qué discos poner por lado para el peso que hay escrito (solo con barra de peso conocido y discos indicados).
   const info = item ? plateInfo[item.exerciseVariantId] : undefined;
   const typedKg = num(weightText);
-  const montage = info && typedKg !== undefined && Number.isFinite(typedKg) && typedKg > 0 ? montageFor(unitToKg(typedKg, unit), info) : null;
-  const plateText = !montage ? null
+  const montage = info && 'stock' in info && typedKg !== undefined && Number.isFinite(typedKg) && typedKg > 0 ? montageFor(unitToKg(typedKg, unit), info) : null;
+  const plateText = info && 'hint' in info ? info.hint : !montage ? null
     : montage.status === 'ok' ? `Por lado: ${montage.perSide.length ? montage.perSide.map((p) => `${p.count > 1 ? `${p.count}×` : ''}${p.label ?? fmtWeight(p.kg, unit)}`).join(' + ') : 'solo la barra'}`
     : montage.status === 'below_bar' ? 'Ese peso es menos que la barra.'
     : montage.status === 'impossible' ? `No se puede montar con tus discos. Más cerca: ${[montage.below, montage.above].filter((m) => m).map((m) => fmtWeight(m!.totalKg, unit)).join(' o ')}.`

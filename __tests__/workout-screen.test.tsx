@@ -217,8 +217,9 @@ describe('discos por lado', () => {
     expect(await screen.findByText('Por lado: 45 lb')).toBeTruthy(); // 20 kg + 2 × 45 lb
   });
 
-  it('sin discos indicados o sin barra de peso conocido no muestra nada', async () => {
+  it('sin discos indicados dice qué falta en vez de callar', async () => {
     await open('kg', []);
+    expect(await screen.findByText('Indica tus discos en su ficha para ver qué poner en cada lado.')).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '60');
     expect(screen.queryByText(/Por lado|No se puede montar/)).toBeNull();
   });

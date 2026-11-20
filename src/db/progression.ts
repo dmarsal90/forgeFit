@@ -3,7 +3,7 @@ import { findVariant } from '../lib/exercises';
 import type { PlanSession } from '../lib/plan';
 import { suggestProgression, variantHistory, type Suggestion } from '../lib/progression';
 import { fmtWeight, unitToKg, type WeightUnit } from '../lib/units';
-import { equipmentIds, isPlates, loadModel, type OwnedItem } from '../lib/loadModel';
+import { equipmentIds, isBar, isPlates, loadModel, type OwnedItem } from '../lib/loadModel';
 import type { PlateStock } from '../lib/plates';
 import { getAttributes } from './equipmentAttributes';
 import { listEnvironmentPlates, toStock } from './equipmentPlates';
@@ -41,8 +41,11 @@ async function loadFor(db: Db, envId: string | null, variantId: string, unit: We
   return { stepKg: m.stepKg ?? fallback, barKg: m.barKg };
 }
 
-export type PlateInfo = { barKg: number; stock: PlateStock[] };
-/** Por cada ejercicio de la sesión con barra de peso conocido y discos indicados, lo necesario para decir qué discos poner. */
+export type PlateInfo = { barKg: number; stock: PlateStock[] } | { hint: string };
+/**
+ * Por cada ejercicio de la sesión que se carga con barra: lo necesario para decir qué discos poner por lado o, si falta algún dato,
+ * una frase que dice cuál (no se calla: sin ella no se sabría por qué no sale el cálculo).
+ */
 export async function loadPlateInfo(db: Db, profileId: string, session: PlanSession): Promise<Record<string, PlateInfo>> {
   const plan = await db.getFirstAsync<{ environment_id: string | null }>("SELECT environment_id FROM training_plans WHERE profile_id = ? AND status = 'active'", [profileId]);
   const out: Record<string, PlateInfo> = {};
@@ -51,8 +54,11 @@ export async function loadPlateInfo(db: Db, profileId: string, session: PlanSess
     const id = item.exerciseVariantId;
     if (out[id]) continue;
     const ctx = await ownedFor(db, plan.environment_id, id);
-    const barKg = ctx ? loadModel(ctx.owned, ctx.stock).barKg : undefined;
-    if (ctx && barKg !== undefined && ctx.stock.length) out[id] = { barKg, stock: ctx.stock };
+    if (!ctx || !ctx.owned.some((i) => isBar(i.id))) continue; // sin barra marcada como disponible no hay montaje que explicar
+    const barKg = loadModel(ctx.owned, ctx.stock).barKg;
+    if (barKg === undefined) out[id] = { hint: 'Para ver qué discos poner, deja marcada solo la barra que usas o indica cuánto pesa en su ficha.' };
+    else if (!ctx.stock.length) out[id] = { hint: 'Indica tus discos en su ficha para ver qué poner en cada lado.' };
+    else out[id] = { barKg, stock: ctx.stock };
   }
   return out;
 }

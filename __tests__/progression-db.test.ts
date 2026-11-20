@@ -125,19 +125,28 @@ describe('discos indicados (kg, lb o ambos)', () => {
     return s;
   };
 
-  it('con barra de peso conocido y discos indicados devuelve lo necesario para montar el peso; sin discos o sin barra conocida, nada', async () => {
+  it('con barra de peso conocido y discos indicados devuelve lo necesario para montar; si falta un dato, dice cuál', async () => {
     const { db, a, gym } = await gymSetup();
-    expect(await loadPlateInfo(db, a.id, session)).toEqual({}); // sin discos indicados
+    const get = async () => (await loadPlateInfo(db, a.id, session))['bench_press.barbell'];
+    expect(await get()).toEqual({ hint: expect.stringMatching(/Indica tus discos/) }); // barra conocida pero sin discos
     await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 45, pairs: 1 }]);
-    const info = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'];
+    const info = (await get()) as { barKg: number; stock: { label?: string }[] };
     expect(info.barKg).toBe(20);
     expect(info.stock.map((p) => p.label)).toEqual(['20 kg', '45 lb']);
 
     await setItemState(db, gym, 'barbell_olympic_15', 'available'); // dos barras con pesos distintos: no se supone ninguna
-    expect(await loadPlateInfo(db, a.id, session)).toEqual({});
+    expect(await get()).toEqual({ hint: expect.stringMatching(/deja marcada solo la barra/) });
     await setItemState(db, gym, 'barbell_olympic_15', null);
     await setItemState(db, gym, 'plates_olympic_iron', 'unavailable'); // discos que no tiene: no cuentan
-    expect(await loadPlateInfo(db, a.id, session)).toEqual({});
+    expect(await get()).toEqual({ hint: expect.stringMatching(/Indica tus discos/) });
+    await setItemState(db, gym, 'barbell_olympic_20', null); // sin ninguna barra marcada no hay nada que explicar
+    expect(await get()).toBeUndefined();
+  });
+
+  it('un ejercicio sin barra no tiene información de discos', async () => {
+    const { db, a } = await gymSetup();
+    const dumb: PlanSession = { day: 0, name: 'X', blocks: [{ type: 'single', items: [{ exerciseVariantId: 'pushup.floor', sets: 3, repRange: [6, 10], restSeconds: 60 }] }] };
+    expect(await loadPlateInfo(db, a.id, dumb)).toEqual({});
   });
 
   it('el escalón de la sugerencia sale del disco más pequeño indicado, sea kg o lb', async () => {
