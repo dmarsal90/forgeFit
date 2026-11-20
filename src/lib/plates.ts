@@ -1,6 +1,6 @@
 /** Un tamaño de disco con los pares que se tienen (un par = uno a cada lado de la barra). */
-export type PlateStock = { kg: number; pairs: number };
-export type Montage = { totalKg: number; perSide: { kg: number; count: number }[] }; // de mayor a menor disco
+export type PlateStock = { kg: number; pairs: number; label?: string }; // label: cómo se llama el disco en su unidad (p. ej. «45 lb»)
+export type Montage = { totalKg: number; perSide: { kg: number; count: number; label?: string }[] }; // de mayor a menor disco
 export type PlateResult =
   | ({ status: 'ok' } & Montage)
   | { status: 'impossible'; below: Montage | null; above: Montage | null } // el peso no se puede montar; los más cercanos que sí
@@ -13,6 +13,8 @@ export const KG_PER_LB = 0.45359237;
 
 // Serie habitual de cada unidad. El tamaño va siempre en kg (como el resto de la app), pero se define en su unidad.
 const STANDARD: Record<PlateUnit, number[]> = { kg: [25, 20, 15, 10, 5, 2.5, 1.25], lb: [45, 35, 25, 10, 5, 2.5] };
+/** Tamaños habituales de cada unidad (en esa unidad). */
+export const standardSizes = (unit: PlateUnit): number[] => [...STANDARD[unit]];
 export const standardPlates = (unit: PlateUnit, pairs = 2): PlateStock[] =>
   STANDARD[unit].map((v) => ({ kg: unit === 'lb' ? Math.round(v * KG_PER_LB * 1e9) / 1e9 : v, pairs }));
 
@@ -29,7 +31,7 @@ const INF = 30000;
 export function platesPerSide(targetKg: number, barKg: number, stock: readonly PlateStock[]): PlateResult {
   if (![targetKg, barKg].every((x) => Number.isFinite(x) && x >= 0)) return { status: 'unsupported' };
   const plates = stock.filter((p) => p.kg > 0 && Number.isFinite(p.kg) && Number.isInteger(p.pairs) && p.pairs > 0 && p.kg <= 1000)
-    .map((p) => ({ g: Math.max(1, Math.round(p.kg * GRAM)), kg: p.kg, pairs: p.pairs })).sort((a, b) => b.g - a.g);
+    .map((p) => ({ g: Math.max(1, Math.round(p.kg * GRAM)), kg: p.kg, pairs: p.pairs, label: p.label })).sort((a, b) => b.g - a.g);
   if (targetKg + TOLERANCE_KG < barKg) return { status: 'below_bar' };
 
   const total = plates.reduce((n, p) => n + p.g * p.pairs, 0);
@@ -59,7 +61,7 @@ export function platesPerSide(targetKg: number, barKg: number, stock: readonly P
       return false;
     };
     go(0, amount, dp[amount]);
-    const perSide = plates.map((p, i) => ({ kg: p.kg, count: use[i] })).filter((x) => x.count > 0);
+    const perSide = plates.map((p, i) => ({ kg: p.kg, count: use[i], ...(p.label ? { label: p.label } : {}) })).filter((x) => x.count > 0);
     const sideKg = perSide.reduce((n, x) => n + x.kg * x.count, 0);
     return { totalKg: Math.round((barKg + 2 * sideKg) * 1e6) / 1e6, perSide };
   };

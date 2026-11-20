@@ -13,13 +13,14 @@ export type OwnedItem = { id: string; stepKg: number | null; barKg: number | nul
 
 /**
  * Cómo se carga un ejercicio con el equipo que la persona tiene (y puede usar en él):
- * - discos: se cargan por pares, así que el escalón es el doble del disco más pequeño (`stepKg` de la ficha de discos = disco más pequeño);
+ * - discos: se cargan por pares, así que el escalón es el doble del disco más pequeño (el de sus discos indicados o, si no, el `stepKg` de la ficha);
  * - barra: su peso (el de la ficha o el habitual de la olímpica de 20 kg, la femenina de 15 kg y la de powerlifting); si hay varias
  *   barras posibles con pesos distintos o alguna sin peso conocido, no se supone ninguna;
  * - mancuernas, máquinas, poleas…: el menor `stepKg` de las fichas.
  */
-export function loadModel(items: readonly OwnedItem[]): { stepKg?: number; barKg?: number } {
-  const plates = items.filter((i) => isPlates(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
+export function loadModel(items: readonly OwnedItem[], stock: readonly { kg: number }[] = []): { stepKg?: number; barKg?: number } {
+  // Con los discos indicados uno a uno, el disco más pequeño sale de ahí; si no, del dato suelto de la ficha de discos.
+  const plates = stock.length ? stock.map((p) => p.kg) : items.filter((i) => isPlates(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
   const others = items.filter((i) => !isPlates(i.id) && !isBar(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
   const stepKg = plates.length ? 2 * Math.min(...plates) : others.length ? Math.min(...others) : undefined;
 

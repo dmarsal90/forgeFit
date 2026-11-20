@@ -134,7 +134,7 @@ describe('atributos de equipo', () => {
     const gym = await ensureEnvironment(db, a.id, 'gym');
     expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(NO_ATTRIBUTES);
 
-    const attrs = { minKg: 2.5, maxKg: 40, stepKg: 2.5, barKg: null };
+    const attrs = { minKg: 2.5, maxKg: 40, stepKg: 2.5, barKg: null, unit: null as 'kg' | 'lb' | null };
     await setAttributes(db, home, 'bench_flat_fixed', attrs);
     expect(await getAttributes(db, home, 'bench_flat_fixed')).toEqual(attrs);
     expect(await getAttributes(db, gym, 'bench_flat_fixed')).toEqual(NO_ATTRIBUTES);

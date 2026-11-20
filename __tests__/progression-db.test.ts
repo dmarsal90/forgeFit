@@ -2,7 +2,8 @@ import { migrate } from '../src/db';
 import { setAttributes } from '../src/db/equipmentAttributes';
 import { ensureEnvironment, setItemState } from '../src/db/inventory';
 import { saveActivePlan } from '../src/db/plans';
-import { loadSuggestions } from '../src/db/progression';
+import { setPlates } from '../src/db/equipmentPlates';
+import { loadPlateInfo, loadSuggestions } from '../src/db/progression';
 import { createProfile } from '../src/db/profiles';
 import { ensureHorizon } from '../src/db/schedule';
 import { finishWorkout, recordEvent, startWorkout } from '../src/db/workouts';
@@ -114,4 +115,38 @@ it('no usa las sesiones de otro perfil ni las que siguen abiertas', async () => 
   const open = await startWorkout(db, b.id, '2026-11-16', 5000);
   await recordEvent(db, open, { type: 'set_done', block: 0, item: 0, round: 0, weightKg: 100, reps: 10 }, { now: 5100 });
   expect((await loadSuggestions(db, b.id, session, 'kg'))['bench_press.barbell'].kind).toBe('none');
+});
+
+describe('discos indicados (kg, lb o ambos)', () => {
+  const gymSetup = async (unit: 'kg' | 'lb' = 'kg') => {
+    const s = await setup(unit);
+    await setItemState(s.db, s.gym, 'barbell_olympic_20', 'available');
+    await setItemState(s.db, s.gym, 'plates_olympic_iron', 'available');
+    return s;
+  };
+
+  it('con barra de peso conocido y discos indicados devuelve lo necesario para montar el peso; sin discos o sin barra conocida, nada', async () => {
+    const { db, a, gym } = await gymSetup();
+    expect(await loadPlateInfo(db, a.id, session)).toEqual({}); // sin discos indicados
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 45, pairs: 1 }]);
+    const info = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'];
+    expect(info.barKg).toBe(20);
+    expect(info.stock.map((p) => p.label)).toEqual(['20 kg', '45 lb']);
+
+    await setItemState(db, gym, 'barbell_olympic_15', 'available'); // dos barras con pesos distintos: no se supone ninguna
+    expect(await loadPlateInfo(db, a.id, session)).toEqual({});
+    await setItemState(db, gym, 'barbell_olympic_15', null);
+    await setItemState(db, gym, 'plates_olympic_iron', 'unavailable'); // discos que no tiene: no cuentan
+    expect(await loadPlateInfo(db, a.id, session)).toEqual({});
+  });
+
+  it('el escalón de la sugerencia sale del disco más pequeño indicado, sea kg o lb', async () => {
+    const { db, a, gym } = await gymSetup();
+    await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'kg', value: 1.25, pairs: 2 }]);
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 62.5 });
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 2.5, pairs: 2 }]); // el más pequeño está en lb
+    const s = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+    expect(s.weightKg).toBeCloseTo(60.82, 1); // el siguiente montaje posible con barra de 20 kg y pares de 2 × 2,5 lb (60 no es uno de ellos)
+  });
 });
