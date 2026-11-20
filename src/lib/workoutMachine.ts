@@ -5,7 +5,7 @@ import type { PlanSession } from './plan';
 // congelada al empezar: el tiempo sale de marcas y pausas, nunca de contadores, y se recupera al reabrir.
 
 const stepRef = { block: z.number().int().min(0).max(11), item: z.number().int().min(0).max(1), round: z.number().int().min(0).max(9) };
-const perf = { weightKg: z.number().min(0).max(1000).optional(), reps: z.number().int().min(0).max(200).optional(), rir: z.number().int().min(0).max(10).optional() };
+const perf = { weightKg: z.number().min(0).max(1000).optional(), reps: z.number().int().min(0).max(200).optional(), rir: z.number().int().min(0).max(10).optional(), pain: z.enum(['discomfort', 'pain']).optional() };
 
 export const eventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start') }),
@@ -20,7 +20,8 @@ export const eventSchema = z.discriminatedUnion('type', [
 export type WorkoutEvent = z.infer<typeof eventSchema>;
 export type Timed = { at: number; event: WorkoutEvent };
 export type Step = { block: number; item: number; round: number };
-export type Performed = { weightKg?: number; reps?: number; rir?: number; skipped: boolean; corrected: boolean };
+export type Pain = 'discomfort' | 'pain'; // molestia | dolor en esa serie (sin valor = ninguna)
+export type Performed = { weightKg?: number; reps?: number; rir?: number; pain?: Pain; skipped: boolean; corrected: boolean };
 export type WorkoutState = {
   status: 'pending' | 'active' | 'paused' | 'finished';
   done: Record<string, Performed>;
@@ -60,14 +61,14 @@ export function reduce(session: PlanSession, events: Timed[], now: number): Work
     } else if ((e.type === 'set_done' || e.type === 'skip') && st.status === 'active') {
       const idx = steps.findIndex((s) => stepKey(s) === stepKey(e));
       if (idx < 0 || st.done[stepKey(e)]) continue; // paso inexistente o repetido: se ignora (idempotente)
-      st.done[stepKey(e)] = { weightKg: e.type === 'set_done' ? e.weightKg : undefined, reps: e.type === 'set_done' ? e.reps : undefined, rir: e.type === 'set_done' ? e.rir : undefined, skipped: e.type === 'skip', corrected: false };
+      st.done[stepKey(e)] = { weightKg: e.type === 'set_done' ? e.weightKg : undefined, reps: e.type === 'set_done' ? e.reps : undefined, rir: e.type === 'set_done' ? e.rir : undefined, pain: e.type === 'set_done' ? e.pain : undefined, skipped: e.type === 'skip', corrected: false };
       advance();
       const next = steps[idx + 1];
       const endsRound = !next || next.block !== e.block || next.round !== e.round;
       const secs = session.blocks[e.block].items[e.item].restSeconds;
       st.rest = e.type === 'set_done' && endsRound && next && secs > 0 ? { seconds: secs, startedAt: at } : null;
     } else if (e.type === 'correct' && st.done[stepKey(e)]) {
-      st.done[stepKey(e)] = { weightKg: e.weightKg, reps: e.reps, rir: e.rir, skipped: false, corrected: true };
+      st.done[stepKey(e)] = { weightKg: e.weightKg, reps: e.reps, rir: e.rir, pain: e.pain, skipped: false, corrected: true };
     }
   }
   if (st.status === 'active') st.activeMs += now - since;

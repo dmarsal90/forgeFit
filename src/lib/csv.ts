@@ -11,7 +11,8 @@ export function csvText(s: string): string {
 
 export type ExportableWorkout = { at: number; session: PlanSession; done: Readonly<Record<string, Performed>> };
 
-const HEADER = 'fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir';
+const HEADER = 'fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir,molestia';
+const PAIN_LABEL = { discomfort: 'molestia', pain: 'dolor' } as const;
 
 /** Una fila por serie realizada (las saltadas no se exportan). El peso va siempre en kg, sin importar la unidad del perfil. */
 export function sessionsToCsv(workouts: readonly ExportableWorkout[]): string {
@@ -26,7 +27,7 @@ export function sessionsToCsv(workouts: readonly ExportableWorkout[]): string {
       const id = w.session.blocks[b]?.items[i]?.exerciseVariantId;
       if (!id) continue;
       const found = findVariant(id);
-      rows.push([date, csvText(w.session.name), csvText(found?.ex.es ?? id), csvText(found?.variant.es ?? id), r + 1, d.weightKg ?? '', d.reps ?? '', d.rir ?? ''].join(','));
+      rows.push([date, csvText(w.session.name), csvText(found?.ex.es ?? id), csvText(found?.variant.es ?? id), r + 1, d.weightKg ?? '', d.reps ?? '', d.rir ?? '', d.pain ? PAIN_LABEL[d.pain] : ''].join(','));
     }
   }
   return rows.join('\n') + '\n';

@@ -83,3 +83,29 @@ it('con el perfil en libras pide y muestra libras, pero guarda kilos', async () 
   const done = (await loadWorkout(db, mockId))!.events.map((e) => e.event).find((e) => e.type === 'set_done');
   expect(done && 'weightKg' in done && done.weightKg).toBeCloseTo(61.235, 2);
 });
+
+it('marcar molestia o dolor en una serie lo guarda solo para esa serie y se puede quitar', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana' });
+  await saveActivePlan(db, profile.id, plan, null);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+  await render(<WorkoutScreen />);
+
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+  await fireEvent.press(screen.getByText('Dolor'));
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A1: dolor
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '9');
+  await fireEvent.press(screen.getByText('Molestia'));
+  await fireEvent.press(screen.getByText('Molestia')); // pulsar otra vez la quita
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A2: nada
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '8');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A1 ronda 2: la marca no se arrastra
+
+  const done = (await loadWorkout(db, mockId))!.state.done;
+  expect(done['0.0.0'].pain).toBe('pain');
+  expect(done['0.1.0'].pain).toBeUndefined();
+  expect(done['0.0.1'].pain).toBeUndefined();
+});
