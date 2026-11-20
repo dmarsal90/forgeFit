@@ -3,6 +3,7 @@ import EquipmentSheet from '../src/app/equipment/[id]';
 import { migrate } from '../src/db';
 import { addCustomItem } from '../src/db/customEquipment';
 import { getAttributes } from '../src/db/equipmentAttributes';
+import { listPlates } from '../src/db/equipmentPlates';
 import { listFavorites } from '../src/db/favorites';
 import { ensureEnvironment, getInventory } from '../src/db/inventory';
 import { createProfile } from '../src/db/profiles';
@@ -43,7 +44,7 @@ it('guarda el estado y los datos con coma decimal, y rechaza un mínimo mayor qu
   await fireEvent.changeText(screen.getByLabelText('Peso mínimo (kg)'), '2,5');
   await fireEvent.press(screen.getByText('Guardar datos'));
   expect(await screen.findByText('Guardado.')).toBeTruthy();
-  expect(await getAttributes(db, env, 'bench_flat_fixed')).toEqual({ minKg: 2.5, maxKg: 40, stepKg: null, barKg: null });
+  expect(await getAttributes(db, env, 'bench_flat_fixed')).toEqual({ minKg: 2.5, maxKg: 40, stepKg: null, barKg: null, unit: null });
 });
 
 it('no abre un entorno de otro perfil ni un equipo propio ajeno', async () => {
@@ -94,7 +95,7 @@ describe('barras y discos: datos que tienen sentido', () => {
     await fireEvent.changeText(screen.getByLabelText('Peso de la barra (kg)'), '22,5');
     await fireEvent.press(screen.getByText('Guardar datos'));
     expect(await screen.findByText('Guardado.')).toBeTruthy();
-    expect(await getAttributes(db, env, 'barbell_olympic_20')).toEqual({ minKg: null, maxKg: null, stepKg: null, barKg: 22.5 });
+    expect(await getAttributes(db, env, 'barbell_olympic_20')).toEqual({ minKg: null, maxKg: null, stepKg: null, barKg: 22.5, unit: null });
   });
 
   it('una barra de las que varían (EZ, hexagonal…) no supone ningún peso y pide indicarlo', async () => {
@@ -104,16 +105,69 @@ describe('barras y discos: datos que tienen sentido', () => {
     expect(await screen.findByText(/Varía según el fabricante/)).toBeTruthy();
   });
 
-  it('los discos piden el disco más pequeño y avisan de que se cargan por pares', async () => {
+  it('los discos se indican uno a uno, cada uno en su unidad, con sus pares', async () => {
     const { db, env } = await seed();
     mockParams = { id: 'plates_olympic_iron', env };
     await render(<EquipmentSheet />);
-    expect(await screen.findByText('Datos de los discos')).toBeTruthy();
-    expect(screen.getByText(/la subida total es el doble/)).toBeTruthy();
-    await fireEvent.changeText(screen.getByLabelText('Disco más pequeño (kg)'), '1,25');
+    expect(await screen.findByText('Mis discos')).toBeTruthy();
+    expect(screen.getByText('Aún no has indicado ningún disco.')).toBeTruthy();
+    expect(screen.queryByText('Guardar datos')).toBeNull();
+
+    await fireEvent.press(screen.getByText('Serie en kg'));
+    expect(await screen.findByText('1.25 kg')).toBeTruthy();
+    expect((await listPlates(db, env, 'plates_olympic_iron')).map((p) => [p.unit, p.value, p.pairs])).toEqual([['kg', 25, 2], ['kg', 20, 2], ['kg', 15, 2], ['kg', 10, 2], ['kg', 5, 2], ['kg', 2.5, 2], ['kg', 1.25, 2]]);
+
+    await fireEvent.press(screen.getByText('Serie en lb')); // los dos juegos a la vez
+    expect(await screen.findByText('45 lb')).toBeTruthy();
+    expect((await listPlates(db, env, 'plates_olympic_iron')).filter((p) => p.unit === 'lb').map((p) => p.value)).toEqual([45, 35, 25, 10, 5, 2.5]);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Un par más de 45 lb' }));
+    expect((await listPlates(db, env, 'plates_olympic_iron')).find((p) => p.unit === 'lb' && p.value === 45)?.pairs).toBe(3);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Un par menos de 45 lb' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Un par menos de 45 lb' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Quitar el disco de 45 lb' })); // con un solo par, el botón quita el disco
+    expect((await listPlates(db, env, 'plates_olympic_iron')).some((p) => p.unit === 'lb' && p.value === 45)).toBe(false); // sin pares, el disco se quita
+  });
+
+  it('añade un disco suelto en la unidad elegida y rechaza uno repetido o vacío', async () => {
+    const { db, env } = await seed();
+    mockParams = { id: 'plates_olympic_iron', env };
+    await render(<EquipmentSheet />);
+    await screen.findByText('Mis discos');
+    await fireEvent.press(screen.getByText('Añadir disco'));
+    expect(await screen.findByText('Escribe cuánto pesa el disco.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('lb'));
+    await fireEvent.changeText(screen.getByLabelText('Otro disco (lb)'), '2,5');
+    await fireEvent.press(screen.getByText('Añadir disco'));
+    expect(await screen.findByText('2.5 lb')).toBeTruthy();
+    expect(await listPlates(db, env, 'plates_olympic_iron')).toEqual([{ unit: 'lb', value: 2.5, pairs: 2 }]);
+    await fireEvent.changeText(screen.getByLabelText('Otro disco (lb)'), '2.5');
+    await fireEvent.press(screen.getByText('Añadir disco'));
+    expect(await screen.findByText('Ese disco ya está en la lista.')).toBeTruthy();
+  });
+
+  it('cada equipo tiene su unidad: una máquina en lb se escribe en lb y se guarda en kg con su unidad', async () => {
+    const { db, env } = await seed();
+    mockParams = { id: 'bench_flat_fixed', env }; // perfil en kg
+    await render(<EquipmentSheet />);
+    await screen.findByText('Banco plano fijo');
+    await fireEvent.press(screen.getByText('En lb'));
+    await fireEvent.changeText(await screen.findByLabelText('Incremento (lb)'), '10');
     await fireEvent.press(screen.getByText('Guardar datos'));
     expect(await screen.findByText('Guardado.')).toBeTruthy();
-    expect(await getAttributes(db, env, 'plates_olympic_iron')).toEqual({ minKg: null, maxKg: null, stepKg: 1.25, barKg: null });
+    const a = await getAttributes(db, env, 'bench_flat_fixed');
+    expect(a.stepKg).toBeCloseTo(4.5359, 3);
+    expect(a.unit).toBe('lb');
+  });
+
+  it('al cambiar de unidad lo escrito se convierte', async () => {
+    const { env } = await seed();
+    mockParams = { id: 'bench_flat_fixed', env };
+    await render(<EquipmentSheet />);
+    await screen.findByText('Banco plano fijo');
+    await fireEvent.changeText(screen.getByLabelText('Peso máximo (kg)'), '100');
+    await fireEvent.press(screen.getByText('En lb'));
+    expect(screen.getByLabelText('Peso máximo (lb)').props.value).toBe('220.5');
   });
 
   it('en libras el valor habitual de la barra sale en libras', async () => {
