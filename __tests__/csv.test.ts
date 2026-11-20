@@ -33,21 +33,21 @@ describe('sessionsToCsv', () => {
   it('una fila por serie hecha, ordenada por fecha y por serie; las saltadas no salen; el peso va en kg', () => {
     const csv = sessionsToCsv([
       { at: AT + 86_400_000, session: session(), done: { '0.0.0': done(70, 8) } },
-      { at: AT, session: session('=Pecho,día'), done: { '0.0.1': done(62.5, 8, { rir: 2 }), '0.0.0': done(60, 10), '0.0.2': { skipped: true, corrected: false } } },
+      { at: AT, session: session('=Pecho,día'), done: { '0.0.1': done(62.5, 8, { rir: 2, pain: 'pain' }), '0.0.0': done(60, 10), '0.0.2': { skipped: true, corrected: false } } },
     ]);
     expect(csv.split('\n')).toEqual([
-      'fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir',
-      `2026-11-18,"'=Pecho,día",Press de banca plano,Con barra,1,60,10,`,
-      `2026-11-18,"'=Pecho,día",Press de banca plano,Con barra,2,62.5,8,2`,
-      '2026-11-19,Empuje,Press de banca plano,Con barra,1,70,8,',
+      'fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir,molestia',
+      `2026-11-18,"'=Pecho,día",Press de banca plano,Con barra,1,60,10,,`,
+      `2026-11-18,"'=Pecho,día",Press de banca plano,Con barra,2,62.5,8,2,dolor`,
+      '2026-11-19,Empuje,Press de banca plano,Con barra,1,70,8,,',
       '',
     ]);
   });
   it('sin series solo devuelve la cabecera, y un paso o ejercicio desconocido no rompe', () => {
-    expect(sessionsToCsv([])).toBe('fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir\n');
+    expect(sessionsToCsv([])).toBe('fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir,molestia\n');
     const csv = sessionsToCsv([{ at: AT, session: session(), done: { '9.0.0': done(50, 5), '0.0.0': done(undefined, undefined) } }]);
     expect(csv.trim().split('\n')).toHaveLength(2); // cabecera + la serie sin peso ni repeticiones, con celdas vacías
-    expect(csv).toContain('Con barra,1,,,');
+    expect(csv).toContain('Con barra,1,,,,');
   });
 });
 
@@ -64,7 +64,7 @@ describe('exportSessionsCsv', () => {
     const id = await startWorkout(db, a.id, '2026-11-16', AT);
     await recordEvent(db, id, { type: 'set_done', block: 0, item: 0, round: 0, weightKg: 80, reps: 5 }, { now: AT + 1000 });
     await finishWorkout(db, id, AT + 2000);
-    expect((await exportSessionsCsv(db, a.id)).split('\n')[1]).toBe('2026-11-18,Empuje,Press de banca plano,Con barra,1,80,5,');
-    expect(await exportSessionsCsv(db, b.id)).toBe('fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir\n');
+    expect((await exportSessionsCsv(db, a.id)).split('\n')[1]).toBe('2026-11-18,Empuje,Press de banca plano,Con barra,1,80,5,,');
+    expect(await exportSessionsCsv(db, b.id)).toBe('fecha,sesion,ejercicio,variante,serie,peso_kg,repeticiones,rir,molestia\n');
   });
 });

@@ -6,8 +6,8 @@ import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/
 import { useApp } from '../../features/AppContext';
 import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
-import { reduce, stepKey, stepsOf, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
-import { Button, Card, Field, Screen, Text } from '../../ui/components';
+import { reduce, stepKey, stepsOf, type Pain, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
+import { Button, Card, Choice, Field, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -20,7 +20,7 @@ export default function WorkoutScreen() {
   const [w, setW] = useState<Workout | null | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
   const [tick, setTick] = useState(0);
-  const [form, setForm] = useState({ weight: '', reps: '', rir: '' });
+  const [form, setForm] = useState<{ weight: string; reps: string; rir: string; pain?: Pain }>({ weight: '', reps: '', rir: '' });
   const [editing, setEditing] = useState<Step | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export default function WorkoutScreen() {
   function pick(s: Step | null) {
     const d = s ? state.done[stepKey(s)] : undefined;
     setEditing(s);
-    setForm({ weight: d?.weightKg === undefined ? '' : String(kgToUnit(d.weightKg, unit)), reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '' });
+    setForm({ weight: d?.weightKg === undefined ? '' : String(kgToUnit(d.weightKg, unit)), reps: d?.reps?.toString() ?? '', rir: d?.rir?.toString() ?? '', pain: d?.pain });
   }
 
   async function complete() {
@@ -56,10 +56,10 @@ export default function WorkoutScreen() {
     const reps = num(form.reps), rir = num(form.rir);
     if (reps === undefined || !Number.isInteger(reps) || reps < 0 || reps > 200) { setError('Indica las repeticiones (0–200).'); return; }
     if ((weightKg !== undefined && !(weightKg >= 0 && weightKg <= 1000)) || (rir !== undefined && !(Number.isInteger(rir) && rir >= 0 && rir <= 10))) { setError(`Revisa el peso (0–${kgToUnit(1000, unit)} ${unit}) y el RIR (0–10).`); return; }
-    const base = { block: step.block, item: step.item, round: step.round, weightKg, reps, rir };
+    const base = { block: step.block, item: step.item, round: step.round, weightKg, reps, rir, pain: form.pain };
     if (editing) { await send({ type: 'correct', ...base }, await newId(db)); pick(null); return; }
     await send({ type: 'set_done', ...base }, `${id}:${stepKey(step)}`);
-    setForm((f) => ({ ...f, reps: '' })); // el peso se conserva para la serie siguiente
+    setForm((f) => ({ ...f, reps: '', pain: undefined })); // el peso se conserva para la serie siguiente; la molestia es de cada serie
   }
 
   const exName = (s: Step) => describeItem(session.blocks[s.block].items[s.item]).name;
@@ -111,6 +111,13 @@ export default function WorkoutScreen() {
               <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={form.weight} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
               <Field label="Repeticiones" keyboardType="number-pad" value={form.reps} onChangeText={(v) => setForm((f) => ({ ...f, reps: v }))} />
               <Field label="RIR (opcional)" keyboardType="number-pad" value={form.rir} onChangeText={(v) => setForm((f) => ({ ...f, rir: v }))} />
+              <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: space.sm }}>
+                {([['discomfort', 'Molestia'], ['pain', 'Dolor']] as const).map(([value, label]) => (
+                  <View key={value} style={{ flex: 1 }}>
+                    <Choice label={label} selected={form.pain === value} onPress={() => setForm((f) => ({ ...f, pain: f.pain === value ? undefined : value }))} />
+                  </View>
+                ))}
+              </View>
               <Button label={editing ? 'Guardar corrección' : 'Completar serie'} icon="checkmark" onPress={complete} />
               {editing
                 ? <Button variant="ghost" label="Cancelar corrección" onPress={() => pick(null)} />

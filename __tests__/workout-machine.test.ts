@@ -1,4 +1,4 @@
-import { reduce, stepKey, stepsOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
+import { eventSchema, reduce, stepKey, stepsOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
 import type { PlanSession } from '../src/lib/plan';
 
 const it_ = (id: string, sets: number, restSeconds = 60) => ({ exerciseVariantId: id, sets, repRange: [8, 12] as [number, number], restSeconds });
@@ -53,4 +53,17 @@ it('la última serie no genera descanso y al terminar se congela el tiempo', () 
   expect(s.rest).toBeNull();
   expect(s.status).toBe('finished');
   expect(s.activeMs).toBe(100);
+});
+
+it('la molestia o el dolor de una serie se guarda con ella, también al corregirla, y un valor inventado se rechaza', () => {
+  const st = reduce(session, [
+    T(0, { type: 'start' }),
+    T(10, { type: 'set_done', block: 0, item: 0, round: 0, reps: 10, weightKg: 20, pain: 'discomfort' }),
+    T(20, done(0, 1, 0)),
+    T(30, { type: 'correct', block: 0, item: 0, round: 0, weightKg: 20, reps: 9, pain: 'pain' }),
+  ], 40);
+  expect(st.done['0.0.0']).toMatchObject({ reps: 9, pain: 'pain', corrected: true });
+  expect(st.done['0.1.0'].pain).toBeUndefined();
+  expect(eventSchema.safeParse({ type: 'set_done', block: 0, item: 0, round: 0, reps: 5, pain: 'fuerte' }).success).toBe(false);
+  expect(eventSchema.safeParse({ type: 'set_done', block: 0, item: 0, round: 0, reps: 5 }).success).toBe(true); // datos antiguos sin el campo
 });
