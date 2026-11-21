@@ -16,6 +16,7 @@ export const eventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set_done'), ...stepRef, ...perf }),
   z.object({ type: z.literal('skip'), ...stepRef }),
   z.object({ type: z.literal('correct'), ...stepRef, ...perf }),
+  z.object({ type: z.literal('warmup'), block: stepRef.block, item: stepRef.item, weightKg: perf.weightKg, reps: perf.reps }), // serie de calentamiento: no es una serie del plan ni cuenta en nada
   z.object({ type: z.literal('substitute'), block: stepRef.block, item: stepRef.item, variantId: z.string().min(1).max(80) }), // «máquina ocupada»: desde ahora este hueco del plan se hace con otra variante
 ]);
 export type WorkoutEvent = z.infer<typeof eventSchema>;
@@ -23,11 +24,13 @@ export type Timed = { at: number; event: WorkoutEvent };
 export type Step = { block: number; item: number; round: number };
 export type Pain = 'discomfort' | 'pain'; // molestia | dolor en esa serie (sin valor = ninguna)
 export type Performed = { weightKg?: number; reps?: number; rir?: number; pain?: Pain; variantId?: string; skipped: boolean; corrected: boolean };
+export type Warmup = { block: number; item: number; weightKg?: number; reps?: number; variantId?: string };
 export type WorkoutState = {
   status: 'pending' | 'active' | 'paused' | 'finished';
   done: Record<string, Performed>;
   current: Step | null; // null cuando ya no quedan series
   rest: { seconds: number; startedAt: number } | null;
+  warmups: Warmup[]; // fuera de `done`: ni series completadas, ni volumen, ni progresión
   variants: Record<string, string>; // «bloque.ítem» → variante que sustituye a la del plan (el plan congelado no se toca)
   activeMs: number;
 };
@@ -52,7 +55,7 @@ export function stepsOf(session: PlanSession): Step[] {
 
 export function reduce(session: PlanSession, events: Timed[], now: number): WorkoutState {
   const steps = stepsOf(session);
-  const st: WorkoutState = { status: 'pending', done: {}, current: steps[0] ?? null, rest: null, variants: {}, activeMs: 0 };
+  const st: WorkoutState = { status: 'pending', done: {}, current: steps[0] ?? null, rest: null, warmups: [], variants: {}, activeMs: 0 };
   let since = 0; // inicio del tramo activo en curso
   let pausedAt = 0;
   const advance = () => { st.current = steps.find((s) => !st.done[stepKey(s)]) ?? null; };
@@ -77,7 +80,8 @@ export function reduce(session: PlanSession, events: Timed[], now: number): Work
       st.rest = e.type === 'set_done' && endsRound && next && secs > 0 ? { seconds: secs, startedAt: at } : null;
     } else if (e.type === 'correct' && st.done[stepKey(e)]) {
       st.done[stepKey(e)] = { weightKg: e.weightKg, reps: e.reps, rir: e.rir, pain: e.pain, variantId: st.done[stepKey(e)].variantId, skipped: false, corrected: true };
-    } else if (e.type === 'substitute' && st.status === 'active' && session.blocks[e.block]?.items[e.item]) st.variants[`${e.block}.${e.item}`] = e.variantId;
+    } else if (e.type === 'warmup' && st.status === 'active' && session.blocks[e.block]?.items[e.item]) st.warmups.push({ block: e.block, item: e.item, weightKg: e.weightKg, reps: e.reps, variantId: st.variants[`${e.block}.${e.item}`] });
+    else if (e.type === 'substitute' && st.status === 'active' && session.blocks[e.block]?.items[e.item]) st.variants[`${e.block}.${e.item}`] = e.variantId;
   }
   if (st.status === 'active') st.activeMs += now - since;
   return st;

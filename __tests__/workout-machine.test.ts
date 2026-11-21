@@ -88,3 +88,20 @@ describe('sustituir en sesión («máquina ocupada»)', () => {
     expect(eventSchema.safeParse(sub(0, 0, '')).success).toBe(false);
   });
 });
+
+describe('calentamiento', () => {
+  const warm = (block: number, item: number, weightKg: number): WorkoutEvent => ({ type: 'warmup', block, item, weightKg, reps: 5 });
+  it('se registra aparte: no completa series, no avanza ni activa el descanso', () => {
+    const s = reduce(session, [T(0, { type: 'start' }), T(1, warm(0, 0, 30)), T(2, warm(0, 0, 40))], 3);
+    expect(s.warmups.map((w) => w.weightKg)).toEqual([30, 40]);
+    expect(s.done).toEqual({});
+    expect(s.current).toEqual({ block: 0, item: 0, round: 0 });
+    expect(s.rest).toBeNull();
+  });
+  it('se ignora antes de empezar, en pausa o en un hueco que no existe; recuerda la variante sustituida', () => {
+    expect(reduce(session, [T(0, warm(0, 0, 30))], 1).warmups).toEqual([]);
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, { type: 'pause' }), T(2, warm(0, 0, 30))], 3).warmups).toEqual([]);
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, warm(9, 0, 30))], 2).warmups).toEqual([]);
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, { type: 'substitute', block: 0, item: 0, variantId: 'z' }), T(2, warm(0, 0, 30))], 3).warmups[0].variantId).toBe('z');
+  });
+});
