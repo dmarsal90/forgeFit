@@ -39,7 +39,7 @@ it('ida y vuelta a otro perfil: el equipo propio se reasigna y todo lo demás se
   const bGym = await ensureEnvironment(db, b.id, 'gym');
   expect(await names(db, b.id, Object.keys(await getInventory(db, bHome)))).toEqual(['Anillas', 'bench_flat_fixed']);
   expect(await getInventory(db, bGym)).toEqual({ bench_flat_fixed: 'unavailable' });
-  expect(await getAttributes(db, bHome, 'bench_flat_fixed')).toEqual({ minKg: 2.5, maxKg: 40, stepKg: 2.5, barKg: null });
+  expect(await getAttributes(db, bHome, 'bench_flat_fixed')).toEqual({ minKg: 2.5, maxKg: 40, stepKg: 2.5, barKg: null, unit: null });
   expect(await names(db, b.id, await listFavorites(db, b.id))).toEqual(['Anillas', 'bench_flat_fixed']);
   // el perfil de origen no cambia y los ids propios son distintos
   expect((await listCustomItems(db, a.id))[0].id).not.toBe((await listCustomItems(db, b.id))[0].id);

@@ -3,6 +3,13 @@ import type { Req } from '../data/exercises';
 export const isBar = (id: string) => id.startsWith('barbell_');
 export const isPlates = (id: string) => id.startsWith('plates_');
 
+/** Sistema de carga: la manga de 25 mm (estándar) y la de 50 mm (olímpica) no admiten los mismos discos. */
+export type PlateSystem = 'olympic' | 'standard';
+const STANDARD_BARS = new Set(['barbell_standard_25mm', 'barbell_ez_standard', 'barbell_short']);
+export const barSystem = (barId: string): PlateSystem => (STANDARD_BARS.has(barId) ? 'standard' : 'olympic');
+/** Los discos fraccionales (0,25 a 1,25 kg) se tratan como olímpicos. */
+export const plateSystem = (plateId: string): PlateSystem => (plateId === 'plates_standard_25mm' ? 'standard' : 'olympic');
+
 // Pesos habituales cuando la persona no ha indicado el de su barra. El resto de barras (EZ, hexagonal, corta, de seguridad…) varían
 // de un fabricante a otro: no se supone ninguno y hay que indicarlo en su ficha.
 export const TYPICAL_BAR_KG: Record<string, number> = { barbell_olympic_20: 20, barbell_olympic_15: 15, barbell_powerlifting: 20 };
@@ -13,13 +20,14 @@ export type OwnedItem = { id: string; stepKg: number | null; barKg: number | nul
 
 /**
  * Cómo se carga un ejercicio con el equipo que la persona tiene (y puede usar en él):
- * - discos: se cargan por pares, así que el escalón es el doble del disco más pequeño (`stepKg` de la ficha de discos = disco más pequeño);
+ * - discos: se cargan por pares, así que el escalón es el doble del disco más pequeño (el de sus discos indicados o, si no, el `stepKg` de la ficha);
  * - barra: su peso (el de la ficha o el habitual de la olímpica de 20 kg, la femenina de 15 kg y la de powerlifting); si hay varias
  *   barras posibles con pesos distintos o alguna sin peso conocido, no se supone ninguna;
  * - mancuernas, máquinas, poleas…: el menor `stepKg` de las fichas.
  */
-export function loadModel(items: readonly OwnedItem[]): { stepKg?: number; barKg?: number } {
-  const plates = items.filter((i) => isPlates(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
+export function loadModel(items: readonly OwnedItem[], stock: readonly { kg: number }[] = []): { stepKg?: number; barKg?: number } {
+  // Con los discos indicados uno a uno, el disco más pequeño sale de ahí; si no, del dato suelto de la ficha de discos.
+  const plates = stock.length ? stock.map((p) => p.kg) : items.filter((i) => isPlates(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
   const others = items.filter((i) => !isPlates(i.id) && !isBar(i.id) && i.stepKg !== null).map((i) => i.stepKg as number);
   const stepKg = plates.length ? 2 * Math.min(...plates) : others.length ? Math.min(...others) : undefined;
 

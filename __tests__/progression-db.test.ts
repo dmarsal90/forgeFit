@@ -2,7 +2,8 @@ import { migrate } from '../src/db';
 import { setAttributes } from '../src/db/equipmentAttributes';
 import { ensureEnvironment, setItemState } from '../src/db/inventory';
 import { saveActivePlan } from '../src/db/plans';
-import { loadSuggestions } from '../src/db/progression';
+import { setPlates } from '../src/db/equipmentPlates';
+import { loadPlateInfo, loadSuggestions } from '../src/db/progression';
 import { createProfile } from '../src/db/profiles';
 import { ensureHorizon } from '../src/db/schedule';
 import { finishWorkout, recordEvent, startWorkout } from '../src/db/workouts';
@@ -114,4 +115,72 @@ it('no usa las sesiones de otro perfil ni las que siguen abiertas', async () => 
   const open = await startWorkout(db, b.id, '2026-11-16', 5000);
   await recordEvent(db, open, { type: 'set_done', block: 0, item: 0, round: 0, weightKg: 100, reps: 10 }, { now: 5100 });
   expect((await loadSuggestions(db, b.id, session, 'kg'))['bench_press.barbell'].kind).toBe('none');
+});
+
+describe('discos indicados (kg, lb o ambos)', () => {
+  const gymSetup = async (unit: 'kg' | 'lb' = 'kg') => {
+    const s = await setup(unit);
+    await setItemState(s.db, s.gym, 'barbell_olympic_20', 'available');
+    await setItemState(s.db, s.gym, 'plates_olympic_iron', 'available');
+    return s;
+  };
+
+  it('con barra de peso conocido y discos indicados devuelve lo necesario para montar; si falta un dato, dice cuál', async () => {
+    const { db, a, gym } = await gymSetup();
+    const get = async () => (await loadPlateInfo(db, a.id, session))['bench_press.barbell'];
+    expect(await get()).toEqual({ hint: expect.stringMatching(/Indica tus discos/) }); // barra conocida pero sin discos
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 45, pairs: 1 }]);
+    const info = (await get()) as { barKg: number; stock: { label?: string }[] };
+    expect(info.barKg).toBe(20);
+    expect(info.stock.map((p) => p.label)).toEqual(['20 kg', '45 lb']);
+
+    await setItemState(db, gym, 'barbell_olympic_15', 'available'); // dos barras con pesos distintos: no se supone ninguna
+    expect(await get()).toEqual({ hint: expect.stringMatching(/deja marcada solo la barra/) });
+    await setItemState(db, gym, 'barbell_olympic_15', null);
+    await setItemState(db, gym, 'plates_olympic_iron', 'unavailable'); // discos que no tiene: no cuentan
+    expect(await get()).toEqual({ hint: expect.stringMatching(/Indica tus discos/) });
+    await setItemState(db, gym, 'barbell_olympic_20', null); // sin ninguna barra marcada no hay nada que explicar
+    expect(await get()).toBeUndefined();
+  });
+
+  it('los discos estándar de 25 mm no se mezclan con los de una barra olímpica, ni al revés', async () => {
+    const { db, a, gym } = await gymSetup(); // barra olímpica de 20 kg + discos olímpicos
+    await setItemState(db, gym, 'plates_standard_25mm', 'available');
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }]);
+    await setPlates(db, gym, 'plates_standard_25mm', [{ unit: 'kg', value: 1, pairs: 2 }]); // caben en otra barra, no en esta
+    const info = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'] as { barKg: number; stock: { label?: string }[] };
+    expect(info.stock.map((p) => p.label)).toEqual(['20 kg']);
+
+    await setItemState(db, gym, 'barbell_olympic_20', null); // solo barra estándar: ahora cuentan sus discos, y su peso hay que indicarlo
+    await setItemState(db, gym, 'barbell_standard_25mm', 'available');
+    expect((await loadPlateInfo(db, a.id, session))['bench_press.barbell']).toEqual({ hint: expect.stringMatching(/cuánto pesa/) });
+    await setAttributes(db, gym, 'barbell_standard_25mm', { minKg: null, maxKg: null, stepKg: null, barKg: 7 });
+    const std = (await loadPlateInfo(db, a.id, session))['bench_press.barbell'] as { barKg: number; stock: { label?: string }[] };
+    expect(std.barKg).toBe(7);
+    expect(std.stock.map((p) => p.label)).toEqual(['1 kg']);
+  });
+
+  it('con barras de los dos sistemas marcadas no se sabe cuál usa: lo dice, aunque los pesos se conozcan', async () => {
+    const { db, a, gym } = await gymSetup();
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }]);
+    await setItemState(db, gym, 'barbell_standard_25mm', 'available');
+    await setAttributes(db, gym, 'barbell_standard_25mm', { minKg: null, maxKg: null, stepKg: null, barKg: 20 }); // mismo peso, distinto sistema
+    expect((await loadPlateInfo(db, a.id, session))['bench_press.barbell']).toEqual({ hint: expect.stringMatching(/estándar y olímpica/) });
+  });
+
+  it('un ejercicio sin barra no tiene información de discos', async () => {
+    const { db, a } = await gymSetup();
+    const dumb: PlanSession = { day: 0, name: 'X', blocks: [{ type: 'single', items: [{ exerciseVariantId: 'pushup.floor', sets: 3, repRange: [6, 10], restSeconds: 60 }] }] };
+    expect(await loadPlateInfo(db, a.id, dumb)).toEqual({});
+  });
+
+  it('el escalón de la sugerencia sale del disco más pequeño indicado, sea kg o lb', async () => {
+    const { db, a, gym } = await gymSetup();
+    await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'kg', value: 1.25, pairs: 2 }]);
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell']).toMatchObject({ kind: 'increase', weightKg: 62.5 });
+    await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 2.5, pairs: 2 }]); // el más pequeño está en lb
+    const s = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+    expect(s.weightKg).toBeCloseTo(60.82, 1); // el siguiente montaje posible con barra de 20 kg y pares de 2 × 2,5 lb (60 no es uno de ellos)
+  });
 });
