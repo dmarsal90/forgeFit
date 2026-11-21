@@ -1,7 +1,7 @@
 import { findVariant } from './exercises';
 import type { PlanSession } from './plan';
 import { toDateKey } from './schedule';
-import type { Performed } from './workoutMachine';
+import { variantOf, type Performed } from './workoutMachine';
 
 /** Celda de texto: entrecomillada si hace falta y neutralizada contra fórmulas de hoja de cálculo (=, +, -, @, tab, CR al inicio). */
 export function csvText(s: string): string {
@@ -24,7 +24,7 @@ export function sessionsToCsv(workouts: readonly ExportableWorkout[]): string {
       return { b, i, r, d };
     }).sort((x, y) => x.b - y.b || x.i - y.i || x.r - y.r);
     for (const { b, i, r, d } of sets) {
-      const id = w.session.blocks[b]?.items[i]?.exerciseVariantId;
+      const id = variantOf(w.session, w.done, `${b}.${i}.${r}`);
       if (!id) continue;
       const found = findVariant(id);
       rows.push([date, csvText(w.session.name), csvText(found?.ex.es ?? id), csvText(found?.variant.es ?? id), r + 1, d.weightKg ?? '', d.reps ?? '', d.rir ?? '', d.pain ? PAIN_LABEL[d.pain] : ''].join(','));

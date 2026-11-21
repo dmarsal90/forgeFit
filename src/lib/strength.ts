@@ -1,6 +1,6 @@
 import { EXERCISES } from '../data/exercises';
 import type { PlanSession } from './plan';
-import type { Performed } from './workoutMachine';
+import { variantOf, type Performed } from './workoutMachine';
 
 export type StrengthPoint = { at: number; kg: number; reps: number; e1rm: number };
 export type ExerciseStrength = { exerciseId: string; name: string; points: StrengthPoint[] }; // puntos en orden cronológico
@@ -21,8 +21,7 @@ export function strengthHistory(workouts: readonly FinishedWorkout[]): ExerciseS
     const best = new Map<string, StrengthPoint>();
     for (const [key, d] of Object.entries(w.done)) {
       if (d.skipped || d.weightKg === undefined || d.reps === undefined) continue;
-      const [b, i] = key.split('.').map(Number);
-      const variantId = w.session.blocks[b]?.items[i]?.exerciseVariantId;
+      const variantId = variantOf(w.session, w.done, key);
       const est = variantId ? e1rm(d.weightKg, d.reps) : null;
       if (!variantId || est === null) continue;
       const id = variantId.split('.')[0];
