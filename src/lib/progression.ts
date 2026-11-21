@@ -1,5 +1,5 @@
 import type { PlanSession } from './plan';
-import type { Pain, Performed } from './workoutMachine';
+import { variantOf, type Pain, type Performed } from './workoutMachine';
 
 export type SetLog = { weightKg?: number; reps?: number; rir?: number; pain?: Pain; skipped: boolean };
 export type SessionLog = { at: number; sets: SetLog[] };
@@ -132,8 +132,8 @@ export function variantHistory(workouts: readonly WorkoutLog[], variantId: strin
   for (const w of [...workouts].sort((a, b) => a.at - b.at)) {
     const sets: (SetLog & { r: number })[] = [];
     for (const [key, d] of Object.entries(w.done)) {
-      const [b, i, r] = key.split('.').map(Number);
-      if (w.session.blocks[b]?.items[i]?.exerciseVariantId === variantId) sets.push({ weightKg: d.weightKg, reps: d.reps, rir: d.rir, pain: d.pain, skipped: d.skipped, r });
+      const r = Number(key.split('.')[2]);
+      if (variantOf(w.session, w.done, key) === variantId) sets.push({ weightKg: d.weightKg, reps: d.reps, rir: d.rir, pain: d.pain, skipped: d.skipped, r });
     }
     if (sets.length) out.push({ at: w.at, sets: sets.sort((x, y) => x.r - y.r).map(({ r: _r, ...s }) => s) });
   }

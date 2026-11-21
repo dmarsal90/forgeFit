@@ -1,4 +1,4 @@
-import { eventSchema, reduce, stepKey, stepsOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
+import { eventSchema, reduce, stepKey, stepsOf, variantOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
 import type { PlanSession } from '../src/lib/plan';
 
 const it_ = (id: string, sets: number, restSeconds = 60) => ({ exerciseVariantId: id, sets, repRange: [8, 12] as [number, number], restSeconds });
@@ -66,4 +66,25 @@ it('la molestia o el dolor de una serie se guarda con ella, también al corregir
   expect(st.done['0.1.0'].pain).toBeUndefined();
   expect(eventSchema.safeParse({ type: 'set_done', block: 0, item: 0, round: 0, reps: 5, pain: 'fuerte' }).success).toBe(false);
   expect(eventSchema.safeParse({ type: 'set_done', block: 0, item: 0, round: 0, reps: 5 }).success).toBe(true); // datos antiguos sin el campo
+});
+
+describe('sustituir en sesión («máquina ocupada»)', () => {
+  const sub = (block: number, item: number, variantId: string): WorkoutEvent => ({ type: 'substitute', block, item, variantId });
+  it('aplica desde ese momento: las series hechas conservan su variante y las siguientes usan la nueva', () => {
+    const s = reduce(session, [T(0, { type: 'start' }), T(1, done(0, 0, 0)), T(2, sub(0, 0, 'z')), T(3, done(0, 1, 0)), T(4, done(0, 0, 1)), T(5, { type: 'correct', block: 0, item: 0, round: 1, reps: 7 })], 6);
+    expect(s.variants).toEqual({ '0.0': 'z' });
+    expect(variantOf(session, s.done, '0.0.0')).toBe('a');
+    expect(variantOf(session, s.done, '0.1.0')).toBe('b'); // otro ítem de la biserie: sin cambios
+    expect(variantOf(session, s.done, '0.0.1')).toBe('z');
+    expect(s.done['0.0.1'].reps).toBe(7); // corregir no pierde la variante
+    expect(variantOf(session, s.done, '0.0.1')).toBe('z');
+  });
+  it('se ignora antes de empezar, en pausa o sobre un hueco que no existe', () => {
+    expect(reduce(session, [T(0, sub(0, 0, 'z'))], 1).variants).toEqual({});
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, { type: 'pause' }), T(2, sub(0, 0, 'z'))], 3).variants).toEqual({});
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, sub(5, 0, 'z'))], 2).variants).toEqual({});
+  });
+  it('el esquema rechaza una variante vacía', () => {
+    expect(eventSchema.safeParse(sub(0, 0, '')).success).toBe(false);
+  });
 });

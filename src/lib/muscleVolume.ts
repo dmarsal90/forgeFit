@@ -1,7 +1,7 @@
 import { EXERCISES } from '../data/exercises';
 import { LIMITATION_LABEL } from './onboarding';
 import type { Plan, PlanSession } from './plan';
-import type { Performed } from './workoutMachine';
+import { variantOf, type Performed } from './workoutMachine';
 
 export type MuscleSets = { muscle: string; label: string; done: number; planned: number };
 
@@ -22,8 +22,7 @@ export function doneSets(workouts: readonly { session: PlanSession; done: Readon
   for (const w of workouts) {
     for (const [key, d] of Object.entries(w.done)) {
       if (d.skipped) continue;
-      const [b, i] = key.split('.').map(Number);
-      const v = w.session.blocks[b]?.items[i]?.exerciseVariantId;
+      const v = variantOf(w.session, w.done, key);
       if (v) add(acc, v, 1);
     }
   }

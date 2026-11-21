@@ -1,6 +1,9 @@
+import { findVariant } from '../lib/exercises';
 import { planSchema, type PlanSession } from '../lib/plan';
+import { suggestReplacements, type Candidate } from '../lib/replacements';
 import { eventSchema, reduce, type Timed, type WorkoutEvent, type WorkoutState } from '../lib/workoutMachine';
 import { newId } from './id';
+import { loadContext } from './planContext';
 import type { Db } from './index';
 
 const sessionSchema = planSchema.shape.sessions.element;
@@ -10,6 +13,7 @@ type Row = { id: string; scheduled_session_id: string | null; status: 'active' |
 
 async function append(tx: Db, workoutId: string, event: WorkoutEvent, at: number, eventId?: string) {
   const ev = eventSchema.parse(event);
+  if (ev.type === 'substitute' && !findVariant(ev.variantId)) throw new Error('Ejercicio desconocido');
   const id = eventId ?? await newId(tx);
   if (await tx.getFirstAsync('SELECT 1 FROM session_events WHERE id = ?', [id])) return; // reintento: ya registrado
   const w = await tx.getFirstAsync<{ status: string }>('SELECT status FROM workout_sessions WHERE id = ?', [workoutId]);
@@ -63,4 +67,11 @@ export async function loadWorkout(db: Db, workoutId: string, now = Date.now()): 
 export async function getOpenWorkoutId(db: Db, profileId: string): Promise<string | null> {
   const r = await db.getFirstAsync<{ id: string }>("SELECT id FROM workout_sessions WHERE profile_id = ? AND status = 'active'", [profileId]);
   return r?.id ?? null;
+}
+
+/** Ejercicios con los que sustituir uno en plena sesión: los equivalentes que el equipo del plan permite y que no están ya en la sesión. */
+export async function loadReplacements(db: Db, profileId: string, variantId: string, sessionVariantIds: readonly string[]): Promise<Candidate[]> {
+  const plan = await db.getFirstAsync<{ environment_id: string | null }>("SELECT environment_id FROM training_plans WHERE profile_id = ? AND status = 'active'", [profileId]);
+  const ctx = await loadContext(db, profileId, plan?.environment_id ?? null);
+  return ctx ? suggestReplacements(variantId, ctx, sessionVariantIds) : [];
 }

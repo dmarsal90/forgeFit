@@ -132,6 +132,11 @@ describe('variantHistory', () => {
     expect(h.map((s) => s.at)).toEqual([100, 200]);
     expect(h[1].sets.map((s) => [s.weightKg, s.reps, s.skipped])).toEqual([[60, 10, false], [62, 8, false], [undefined, undefined, true]]);
   });
+  it('cuenta las series por la variante realmente hecha, no por la del plan', () => {
+    const h = variantHistory([{ at: 1, session: session('squat.x', 'otro.y'), done: { '0.0.0': p(100, 5), '0.0.1': { ...p(60, 8), variantId: 'leg_press.x' } } }], 'leg_press.x');
+    expect(h[0].sets.map((s) => s.weightKg)).toEqual([60]);
+    expect(variantHistory([{ at: 1, session: session('squat.x', 'otro.y'), done: { '0.0.1': { ...p(60, 8), variantId: 'leg_press.x' } } }], 'squat.x')).toEqual([]);
+  });
   it('sin sesiones de esa variante devuelve vacío y alimenta bien a suggestProgression', () => {
     expect(variantHistory([], 'x.y')).toEqual([]);
     const h = variantHistory([{ at: 1, session: session('bench_press.barbell', 'db_fly.flat'), done: { '0.0.0': p(60, 10), '0.0.1': p(60, 10), '0.0.2': p(60, 10) } }], 'bench_press.barbell');
