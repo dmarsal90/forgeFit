@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import WorkoutScreen from '../src/app/workout/[id]';
 import { migrate } from '../src/db';
+import { saveDraft } from '../src/db/onboarding';
 import { saveActivePlan } from '../src/db/plans';
 import { createProfile } from '../src/db/profiles';
 import { ensureHorizon } from '../src/db/schedule';
@@ -111,6 +112,39 @@ it('marcar molestia o dolor en una serie lo guarda solo para esa serie y se pued
   expect(done['0.0.0'].pain).toBe('pain');
   expect(done['0.1.0'].pain).toBeUndefined();
   expect(done['0.0.1'].pain).toBeUndefined();
+});
+
+it('«Máquina ocupada» sustituye el ejercicio solo desde ahí, sin tocar el plan, y se puede volver al original', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana' });
+  for (const [step, data] of Object.entries({ 2: { primaryGoal: 'muscle' }, 3: { level: 'intermediate' }, 4: { days: [0, 2, 4], minutes: 60 }, 5: { environments: ['gym'] }, 6: {}, 7: {} })) await saveDraft(db, profile.id, Number(step), data);
+  const gym = await ensureEnvironment(db, profile.id, 'gym');
+  for (const e of ['dumbbells_fixed_hex', 'bench_adjustable']) await setItemState(db, gym, e, 'available');
+  await saveActivePlan(db, profile.id, plan, gym);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+  await render(<WorkoutScreen />);
+
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A1 con el ejercicio del plan
+  await fireEvent.press(await screen.findByRole('button', { name: 'Máquina ocupada' }));
+  const options = await screen.findAllByRole('button', { name: /^Usar / });
+  await fireEvent.press(options[0]);
+  await fireEvent.press(await screen.findByRole('button', { name: 'Máquina ocupada' }));
+  expect(await screen.findByRole('button', { name: /^Volver a / })).toBeTruthy(); // con una sustitución activa se ofrece deshacerla
+  await fireEvent.press(screen.getByRole('button', { name: 'Máquina ocupada' })); // cierra la lista
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '8');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A2 ya con la alternativa
+
+  const w = (await loadWorkout(db, mockId))!;
+  const chosen = w.state.variants['0.1'];
+  expect(chosen).toBeTruthy();
+  expect(chosen).not.toBe('pushup.floor');
+  expect(w.state.done['0.0.0'].variantId).toBeUndefined(); // la serie anterior sigue siendo del plan
+  expect(w.state.done['0.1.0'].variantId).toBe(chosen);
+  expect(w.session.blocks.flatMap((b) => b.items.map((i) => i.exerciseVariantId))).toEqual(['pushup.floor', 'pushup.floor']); // el plan congelado intacto
 });
 
 describe('sugerencia de progresión', () => {

@@ -3,13 +3,15 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { newId } from '../../db/id';
 import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
-import { finishWorkout, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
+import { finishWorkout, loadReplacements, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
+import type { Candidate } from '../../lib/replacements';
 import { platesPerSide, type PlateResult, type PlateStock } from '../../lib/plates';
+import type { PlanSession } from '../../lib/plan';
 import type { Suggestion } from '../../lib/progression';
 import { fmtWeight, kgToUnit, unitToKg } from '../../lib/units';
 import { describeItem } from '../../features/PlanView';
-import { reduce, stepKey, stepsOf, type Pain, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
+import { reduce, stepKey, stepsOf, variantOf, type Pain, type Step, type WorkoutEvent } from '../../lib/workoutMachine';
 import { Button, Card, Choice, Field, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
@@ -24,6 +26,11 @@ function montageFor(targetKg: number, info: { barKg: number; stock: PlateStock[]
   return lastMontage.result;
 }
 
+// El plan congelado no se modifica: la variante que sustituye a otra solo cambia lo que se ve y se calcula en la sesión.
+function effectiveSession(session: PlanSession, variants: Record<string, string>): PlanSession {
+  return { ...session, blocks: session.blocks.map((b, bi) => ({ ...b, items: b.items.map((it, ii) => (variants[`${bi}.${ii}`] ? { ...it, exerciseVariantId: variants[`${bi}.${ii}`] } : it)) })) } as PlanSession;
+}
+
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { db, profile } = useApp();
@@ -36,21 +43,24 @@ export default function WorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sug, setSug] = useState<Record<string, Suggestion>>({});
   const [plateInfo, setPlateInfo] = useState<Record<string, PlateInfo>>({});
+  const [options, setOptions] = useState<Candidate[] | null>(null); // «máquina ocupada»: alternativas abiertas
 
   useEffect(() => { loadWorkout(db, id).then(setW).catch(() => setW(null)); }, [db, id, tick]);
   // Las sugerencias salen de las sesiones anteriores: se calculan una vez al abrir la sesión, no en cada serie.
   useEffect(() => {
     if (!profile || !w) return;
-    loadSuggestions(db, profile.id, w.session, unit).then(setSug).catch(() => setSug({}));
-    loadPlateInfo(db, profile.id, w.session).then(setPlateInfo).catch(() => setPlateInfo({}));
-  }, [db, profile, unit, w?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const eff = effectiveSession(w.session, w.state.variants); // con las sustituciones hechas en la sesión
+    loadSuggestions(db, profile.id, eff, unit).then(setSug).catch(() => setSug({}));
+    loadPlateInfo(db, profile.id, eff).then(setPlateInfo).catch(() => setPlateInfo({}));
+  }, [db, profile, unit, w?.id, JSON.stringify(w?.state.variants)]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   if (w === undefined) return <Screen><Text muted>Cargando…</Text></Screen>;
   if (w === null) return <Screen><Text variant="title">Sesión no encontrada</Text><Button label="Volver" onPress={() => router.replace('/')} /></Screen>;
 
-  const { session } = w;
-  const state = reduce(session, w.events, now); // el tiempo se recalcula de las marcas en cada pintado
+  const planned = w.session;
+  const state = reduce(planned, w.events, now); // el tiempo se recalcula de las marcas en cada pintado
+  const session = effectiveSession(planned, state.variants);
   const step = editing ?? state.current;
   const item = step ? session.blocks[step.block].items[step.item] : null;
   const block = step ? session.blocks[step.block] : null;
@@ -94,7 +104,21 @@ export default function WorkoutScreen() {
     setForm((f) => ({ ...f, weight: undefined, reps: '', pain: undefined })); // cada serie parte de su peso por defecto; la molestia es de cada serie
   }
 
-  const exName = (s: Step) => describeItem(session.blocks[s.block].items[s.item]).name;
+  // Una serie ya hecha conserva el ejercicio con el que se hizo, aunque después se sustituya.
+  const exName = (s: Step) => describeItem({ ...session.blocks[s.block].items[s.item], exerciseVariantId: variantOf(planned, state.done, stepKey(s)) ?? session.blocks[s.block].items[s.item].exerciseVariantId }).name;
+  const stepName = (s: Step) => describeItem(session.blocks[s.block].items[s.item]).name; // la serie que toca ahora usa la variante vigente
+  const original = step ? planned.blocks[step.block].items[step.item].exerciseVariantId : null;
+  async function openOptions() {
+    if (!profile || !item) return;
+    try { setOptions(await loadReplacements(db, profile.id, item.exerciseVariantId, session.blocks.flatMap((b) => b.items.map((i) => i.exerciseVariantId)))); }
+    catch { setError('No se pudieron cargar las alternativas.'); }
+  }
+  async function substitute(variantId: string) {
+    if (!step) return;
+    await send({ type: 'substitute', block: step.block, item: step.item, variantId });
+    setOptions(null);
+    setForm((f) => ({ ...f, weight: undefined })); // el peso por defecto es el del nuevo ejercicio
+  }
   const header = <Text variant="title">{session.name}</Text>;
 
   if (state.status === 'finished') {
@@ -138,7 +162,7 @@ export default function WorkoutScreen() {
               <Text variant="caption" muted>
                 {editing ? 'Corregir serie · ' : ''}{block.type === 'superset' ? `Biserie · ${step.item === 0 ? 'A1' : 'A2'} · ronda ${step.round + 1}` : `Serie ${step.round + 1} de ${item.sets}`}
               </Text>
-              <Text variant="title">{exName(step)}</Text>
+              <Text variant="title">{stepName(step)}</Text>
               <Text muted>{item.repRange[0]}-{item.repRange[1]} repeticiones{item.rir !== undefined ? ` · RIR ${item.rir}` : ''}</Text>
               {!editing && sug[item.exerciseVariantId] && sug[item.exerciseVariantId].kind !== 'none' ? (
                 <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sug[item.exerciseVariantId].message} ${sug[item.exerciseVariantId].reason}`}>
@@ -157,6 +181,22 @@ export default function WorkoutScreen() {
                   </View>
                 ))}
               </View>
+              {!editing ? (
+                <>
+                  <Button variant="ghost" label="Máquina ocupada" onPress={() => (options ? setOptions(null) : openOptions())} />
+                  {options ? (
+                    <View style={{ gap: space.xs }}>
+                      {original && item.exerciseVariantId !== original ? <Button variant="secondary" label={`Volver a ${describeItem({ ...item, exerciseVariantId: original }).name}`} onPress={() => substitute(original)} /> : null}
+                      {options.length ? options.map((c) => (
+                        <View key={c.variantId} style={{ gap: space.xs }}>
+                          <Button variant="secondary" label={`Usar ${c.exercise.es} · ${c.variantLabel}`} onPress={() => substitute(c.variantId)} />
+                          <Text variant="caption" muted>{c.reason}</Text>
+                        </View>
+                      )) : <Text muted>No hay alternativas con tu equipo.</Text>}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
               <Button label={editing ? 'Guardar corrección' : 'Completar serie'} icon="checkmark" onPress={complete} />
               {editing
                 ? <Button variant="ghost" label="Cancelar corrección" onPress={() => pick(null)} />
