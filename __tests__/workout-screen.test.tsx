@@ -147,6 +147,34 @@ it('«Máquina ocupada» sustituye el ejercicio solo desde ahí, sin tocar el pl
   expect(w.session.blocks.flatMap((b) => b.items.map((i) => i.exerciseVariantId))).toEqual(['pushup.floor', 'pushup.floor']); // el plan congelado intacto
 });
 
+it('calentamiento: propone la rampa hacia el peso escrito, se marca aparte y no cuenta como serie', async () => {
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana' });
+  await saveActivePlan(db, profile.id, plan, null);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+  await render(<WorkoutScreen />);
+
+  expect(screen.queryByText('Calentamiento')).toBeNull(); // sin peso escrito no hay rampa
+  await fireEvent.changeText(await screen.findByLabelText('Peso (kg)'), '100');
+  expect(await screen.findByText('50 kg × 5')).toBeTruthy();
+  expect(screen.getByText('70 kg × 3')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Calentamiento 1 hecho' }));
+  expect(await screen.findByRole('button', { name: 'Calentamiento 2 hecho' })).toBeTruthy();
+  const w = (await loadWorkout(db, mockId))!;
+  expect(w.state.warmups).toMatchObject([{ block: 0, item: 0, weightKg: 50, reps: 5 }]);
+  expect(w.state.done).toEqual({});
+
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '8');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A1
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '8');
+  await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A2 (otro ejercicio, ronda 1): ya sin rampa
+  await fireEvent.changeText(await screen.findByLabelText('Peso (kg)'), '100');
+  expect(screen.queryByText('Calentamiento')).toBeNull(); // pasada la primera serie, ya no se propone
+});
+
 describe('sugerencia de progresión', () => {
   const benchPlan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'single' as const, items: [{ exerciseVariantId: 'bench_press.barbell', sets: 3, repRange: [6, 10] as [number, number], restSeconds: 60 }] }] })) };
 

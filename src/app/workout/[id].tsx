@@ -7,6 +7,7 @@ import { addSet, type VariantRecord } from '../../lib/records';
 import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
 import { finishWorkout, loadReplacements, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
+import { warmupSets } from '../../lib/warmup';
 import type { Candidate } from '../../lib/replacements';
 import { platesPerSide, type PlateResult, type PlateStock } from '../../lib/plates';
 import type { PlanSession } from '../../lib/plan';
@@ -83,6 +84,12 @@ export default function WorkoutScreen() {
     : montage.status === 'below_bar' ? 'Ese peso es menos que la barra.'
     : montage.status === 'impossible' ? `No se puede montar con tus discos. Más cerca: ${[montage.below, montage.above].filter((m) => m).map((m) => fmtWeight(m!.totalKg, unit)).join(' o ')}.`
     : null;
+  // Calentamiento: solo antes de la primera serie de trabajo del ejercicio, hacia el peso que hay escrito.
+  const stepKg = info && 'stock' in info && info.stock.length ? 2 * Math.min(...info.stock.map((p) => p.kg)) : unitToKg(unit === 'lb' ? 5 : 2.5, unit);
+  const warmups = step ? state.warmups.filter((x) => x.block === step.block && x.item === step.item) : [];
+  const ramp = step && !editing && step.round === 0 && typedKg !== undefined && typedKg > 0
+    ? warmupSets(unitToKg(typedKg, unit), { barKg: info && 'stock' in info ? info.barKg : undefined, stepKg }) : [];
+  const nextWarm = ramp[warmups.length];
   const doneCount = Object.values(state.done).filter((d) => !d.skipped).length;
 
   async function send(e: WorkoutEvent, eventId?: string) {
@@ -184,6 +191,17 @@ export default function WorkoutScreen() {
               ) : null}
               <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={weightText} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
               {plateText ? <Text accessibilityLiveRegion="polite" muted={montage?.status !== 'ok'}>{plateText}</Text> : null}
+              {ramp.length ? (
+                <View style={{ gap: space.xs }}>
+                  <Text variant="subtitle">Calentamiento</Text>
+                  {ramp.map((r, n) => (
+                    <Text key={n} muted={n >= warmups.length} accessibilityLabel={`Calentamiento ${n + 1}: ${fmtWeight(r.weightKg, unit)} por ${r.reps} repeticiones${n < warmups.length ? ', hecho' : ''}`}>
+                      {n < warmups.length ? '✓ ' : ''}{fmtWeight(r.weightKg, unit)} × {r.reps}
+                    </Text>
+                  ))}
+                  {nextWarm ? <Button variant="secondary" label={`Calentamiento ${warmups.length + 1} hecho`} onPress={() => send({ type: 'warmup', block: step!.block, item: step!.item, weightKg: nextWarm.weightKg, reps: nextWarm.reps }, `${id}:w${step!.block}.${step!.item}.${warmups.length}`)} /> : null}
+                </View>
+              ) : null}
               <Field label="Repeticiones" keyboardType="number-pad" value={form.reps} onChangeText={(v) => setForm((f) => ({ ...f, reps: v }))} />
               <Field label="RIR (opcional)" keyboardType="number-pad" value={form.rir} onChangeText={(v) => setForm((f) => ({ ...f, rir: v }))} />
               <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: space.sm }}>
