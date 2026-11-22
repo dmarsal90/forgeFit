@@ -4,6 +4,7 @@ import type { Db } from './index';
 import { sessionsToCsv, type ExportableWorkout } from '../lib/csv';
 import { doneSets, muscleSets, plannedSets, type MuscleSets } from '../lib/muscleVolume';
 import { planSchema } from '../lib/plan';
+import { personalRecords, type VariantRecord } from '../lib/records';
 import { strengthHistory, type ExerciseStrength } from '../lib/strength';
 import { loadWorkout } from './workouts';
 
@@ -63,6 +64,11 @@ export async function loadFinishedWorkouts(db: Db, profileId: string, limit: num
 /** Fuerza histórica por ejercicio a partir de las últimas sesiones terminadas del perfil. */
 export async function getStrength(db: Db, profileId: string): Promise<ExerciseStrength[]> {
   return strengthHistory(await loadFinishedWorkouts(db, profileId, STRENGTH_WORKOUTS));
+}
+
+/** Récords personales por variante a partir de las últimas sesiones terminadas. */
+export async function getRecords(db: Db, profileId: string): Promise<Record<string, VariantRecord>> {
+  return personalRecords(await loadFinishedWorkouts(db, profileId, STRENGTH_WORKOUTS));
 }
 
 /** CSV con todas las sesiones terminadas del perfil. */
