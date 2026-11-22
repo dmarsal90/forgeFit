@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import WorkoutScreen from '../src/app/workout/[id]';
 import { migrate } from '../src/db';
 import { saveDraft } from '../src/db/onboarding';
@@ -166,6 +166,25 @@ describe('sugerencia de progresión', () => {
     mockId = await startWorkout(db, profile.id, toDateKey());
     await render(<WorkoutScreen />);
   }
+
+  it('avisa de nuevo récord solo si supera el historial, no repetido a igual marca, y nunca en la primera vez', async () => {
+    await open(true);
+    await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+    await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // 62.5 × 10 > 60 × 10
+    expect(await screen.findByText('¡Nuevo récord!')).toBeTruthy();
+    await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+    await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // iguala la de hoy: sin aviso
+    await waitFor(() => expect(screen.queryByText('¡Nuevo récord!')).toBeNull());
+  });
+
+  it('sin historial no hay récord que batir', async () => {
+    await open(false);
+    await fireEvent.changeText(await screen.findByLabelText('Peso (kg)'), '60');
+    await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+    await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ }));
+    await screen.findByText(/Serie 2 de 3/);
+    expect(screen.queryByText('¡Nuevo récord!')).toBeNull();
+  });
 
   it('muestra qué hacer y por qué, y rellena el peso sugerido (editable) solo en la primera serie', async () => {
     await open(true);

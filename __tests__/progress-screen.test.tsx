@@ -61,3 +61,14 @@ it('muestra la fuerza por ejercicio en la unidad del perfil y despliega el histo
   fireEvent.press(row);
   expect(await screen.findByText(/132\.3 lb × 10 → 176\.4 lb/)).toBeTruthy();
 });
+
+it('muestra los récords por variante con la mejor serie y el 1RM estimado', async () => {
+  await setup(false);
+  const { db, profile } = mockApp as { db: ReturnType<typeof memoryDb>; profile: { id: string } };
+  const id = await startWorkout(db, profile.id, toDateKey());
+  await recordEvent(db, id, { type: 'set_done', block: 0, item: 0, round: 0, weightKg: 60, reps: 10 });
+  await finishWorkout(db, id);
+  await render(<ProgressScreen />);
+  expect(await screen.findByText('Récords')).toBeTruthy();
+  expect(screen.getByText('60 kg × 10 · 1RM estimado 80 kg')).toBeTruthy();
+});
