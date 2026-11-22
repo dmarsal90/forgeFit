@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Vibration } from 'react-native';
 import WorkoutScreen from '../src/app/workout/[id]';
 import { migrate } from '../src/db';
 import { saveDraft } from '../src/db/onboarding';
@@ -18,6 +19,7 @@ jest.mock('expo-router', () => ({ router: { replace: jest.fn() }, useLocalSearch
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('../src/features/AppContext', () => ({ useApp: () => mockApp }));
 let mockId = '';
+jest.mock('expo-keep-awake', () => ({ activateKeepAwakeAsync: jest.fn(() => Promise.resolve()), deactivateKeepAwake: jest.fn(() => Promise.resolve()) }));
 
 const item = (id: string, sets: number) => ({ exerciseVariantId: id, sets, repRange: [8, 12] as [number, number], restSeconds: 60 });
 const plan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'superset' as const, items: [item('pushup.floor', 2), item('pushup.floor', 2)] }] })) };
@@ -173,6 +175,47 @@ it('calentamiento: propone la rampa hacia el peso escrito, se marca aparte y no 
   await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ })); // A2 (otro ejercicio, ronda 1): ya sin rampa
   await fireEvent.changeText(await screen.findByLabelText('Peso (kg)'), '100');
   expect(screen.queryByText('Calentamiento')).toBeNull(); // pasada la primera serie, ya no se propone
+});
+
+it('mantiene la pantalla encendida solo mientras la sesión está activa', async () => {
+  const awake = jest.requireMock('expo-keep-awake') as { activateKeepAwakeAsync: jest.Mock; deactivateKeepAwake: jest.Mock };
+  awake.activateKeepAwakeAsync.mockClear(); awake.deactivateKeepAwake.mockClear();
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana' });
+  await saveActivePlan(db, profile.id, plan, null);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+  await render(<WorkoutScreen />);
+  await waitFor(() => expect(awake.activateKeepAwakeAsync).toHaveBeenCalledWith('workout'));
+  await fireEvent.press(await screen.findByText('Pausar'));
+  await waitFor(() => expect(awake.deactivateKeepAwake).toHaveBeenCalledWith('workout'));
+});
+
+it('vibra una sola vez al acabar el descanso y no si se salta', async () => {
+  const vibrate = jest.spyOn(Vibration, 'vibrate').mockImplementation(() => {});
+  const db = memoryDb();
+  await migrate(db);
+  const profile = await createProfile(db, { alias: 'Ana' });
+  await saveActivePlan(db, profile.id, plan, null);
+  await ensureHorizon(db, profile.id, toDateKey());
+  mockApp = { db, profile };
+  mockId = await startWorkout(db, profile.id, toDateKey());
+  await render(<WorkoutScreen />);
+  for (const reps of ['10', '10']) { // A1 y A2 de la ronda 1 → descanso de 60 s
+    await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), reps);
+    await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ }));
+  }
+  expect(await screen.findByText(/^Descanso /)).toBeTruthy();
+  expect(vibrate).not.toHaveBeenCalled();
+  for (let i = 0; i < 4; i++) await fireEvent.press(await screen.findByRole('button', { name: 'Quitar 15 s' })); // 60 s → 0
+  await screen.findByText('Descanso terminado');
+  await waitFor(() => expect(vibrate).toHaveBeenCalledTimes(1));
+  await fireEvent.press(screen.getByRole('button', { name: 'Saltar descanso' }));
+  await fireEvent.changeText(await screen.findByLabelText('Repeticiones'), '10');
+  expect(vibrate).toHaveBeenCalledTimes(1);
+  vibrate.mockRestore();
 });
 
 describe('sugerencia de progresión', () => {
