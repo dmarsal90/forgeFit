@@ -1,4 +1,4 @@
-import { eventSchema, reduce, stepKey, stepsOf, variantOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
+import { eventSchema, reduce, stepKey, stepsOf, MAX_REST, variantOf, type Timed, type WorkoutEvent } from '../src/lib/workoutMachine';
 import type { PlanSession } from '../src/lib/plan';
 
 const it_ = (id: string, sets: number, restSeconds = 60) => ({ exerciseVariantId: id, sets, repRange: [8, 12] as [number, number], restSeconds });
@@ -103,5 +103,21 @@ describe('calentamiento', () => {
     expect(reduce(session, [T(0, { type: 'start' }), T(1, { type: 'pause' }), T(2, warm(0, 0, 30))], 3).warmups).toEqual([]);
     expect(reduce(session, [T(0, { type: 'start' }), T(1, warm(9, 0, 30))], 2).warmups).toEqual([]);
     expect(reduce(session, [T(0, { type: 'start' }), T(1, { type: 'substitute', block: 0, item: 0, variantId: 'z' }), T(2, warm(0, 0, 30))], 3).warmups[0].variantId).toBe('z');
+  });
+});
+
+describe('ajustar el descanso', () => {
+  const adj = (seconds: number): WorkoutEvent => ({ type: 'rest_adjust', seconds });
+  const base = [T(0, { type: 'start' }), T(10, done(0, 0, 0)), T(20, done(0, 1, 0))]; // descanso de 45 s tras A2
+  it('suma o resta segundos al descanso en curso, entre 0 y el máximo', () => {
+    expect(reduce(session, [...base, T(21, adj(15))], 22).rest?.seconds).toBe(60);
+    expect(reduce(session, [...base, T(21, adj(-15)), T(22, adj(-15)), T(23, adj(-15))], 24).rest?.seconds).toBe(0);
+    expect(reduce(session, [...base, T(21, adj(300)), T(22, adj(300)), T(23, adj(300))], 24).rest?.seconds).toBe(MAX_REST);
+  });
+  it('sin descanso en curso o en pausa no hace nada, y el esquema limita el salto', () => {
+    expect(reduce(session, [T(0, { type: 'start' }), T(1, adj(15))], 2).rest).toBeNull();
+    expect(reduce(session, [...base, T(21, { type: 'pause' }), T(22, adj(15))], 23).rest?.seconds).toBe(45);
+    expect(eventSchema.safeParse(adj(301)).success).toBe(false);
+    expect(eventSchema.safeParse(adj(1.5)).success).toBe(false);
   });
 });
