@@ -2,6 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { newId } from '../../db/id';
+import { getRecords } from '../../db/stats';
+import { addSet, type VariantRecord } from '../../lib/records';
 import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
 import { finishWorkout, loadReplacements, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
@@ -43,12 +45,15 @@ export default function WorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sug, setSug] = useState<Record<string, Suggestion>>({});
   const [plateInfo, setPlateInfo] = useState<Record<string, PlateInfo>>({});
+  const [records, setRecords] = useState<Record<string, VariantRecord> | null>(null); // null = aún sin cargar: no se avisa de récords
+  const [banner, setBanner] = useState<string | null>(null);
   const [options, setOptions] = useState<Candidate[] | null>(null); // «máquina ocupada»: alternativas abiertas
 
   useEffect(() => { loadWorkout(db, id).then(setW).catch(() => setW(null)); }, [db, id, tick]);
   // Las sugerencias salen de las sesiones anteriores: se calculan una vez al abrir la sesión, no en cada serie.
   useEffect(() => {
     if (!profile || !w) return;
+    getRecords(db, profile.id).then(setRecords).catch(() => setRecords(null));
     const eff = effectiveSession(w.session, w.state.variants); // con las sustituciones hechas en la sesión
     loadSuggestions(db, profile.id, eff, unit).then(setSug).catch(() => setSug({}));
     loadPlateInfo(db, profile.id, eff).then(setPlateInfo).catch(() => setPlateInfo({}));
@@ -101,6 +106,12 @@ export default function WorkoutScreen() {
     const base = { block: step.block, item: step.item, round: step.round, weightKg, reps, rir, pain: form.pain };
     if (editing) { await send({ type: 'correct', ...base }, await newId(db)); pick(null); return; }
     await send({ type: 'set_done', ...base }, `${id}:${stepKey(step)}`);
+    if (records && form.pain !== 'pain' && item) { // el récord se compara con el historial y con las series ya hechas hoy
+      const vid = item.exerciseVariantId;
+      const r = addSet(records[vid], { kg: weightKg, reps, at: now });
+      setRecords({ ...records, [vid]: r.rec });
+      setBanner(r.broken ? '¡Nuevo récord!' : null);
+    } else setBanner(null);
     setForm((f) => ({ ...f, weight: undefined, reps: '', pain: undefined })); // cada serie parte de su peso por defecto; la molestia es de cada serie
   }
 
@@ -150,6 +161,7 @@ export default function WorkoutScreen() {
         <Button label="Reanudar" icon="play" onPress={() => send({ type: 'resume' })} />
       ) : (
         <>
+          {banner ? <Text variant="subtitle" accessibilityLiveRegion="polite" style={{ color: colors.accent }}>{banner}</Text> : null}
           {rest ? (
             <Card style={{ gap: space.sm }}>
               <Text variant="subtitle" accessibilityLiveRegion="polite">{remaining > 0 ? `Descanso ${mmss(remaining)}` : 'Descanso terminado'}</Text>

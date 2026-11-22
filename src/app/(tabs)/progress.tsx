@@ -1,8 +1,10 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { getProgressStats, getStrength, type ProgressStats } from '../../db/stats';
+import { getProgressStats, getRecords, getStrength, type ProgressStats } from '../../db/stats';
 import { useApp } from '../../features/AppContext';
+import { findVariant } from '../../lib/exercises';
+import type { VariantRecord } from '../../lib/records';
 import type { ExerciseStrength } from '../../lib/strength';
 import { fmtWeight } from '../../lib/units';
 import { Card, EmptyState, Screen, Text } from '../../ui/components';
@@ -12,12 +14,14 @@ export default function ProgressScreen() {
   const { db, profile } = useApp();
   const [stats, setStats] = useState<ProgressStats | null>(null);
   const [strength, setStrength] = useState<ExerciseStrength[]>([]);
+  const [records, setRecords] = useState<Record<string, VariantRecord>>({});
   const [open, setOpen] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     if (!profile) return;
     getProgressStats(db, profile.id).then(setStats).catch(() => setStats(null));
     getStrength(db, profile.id).then(setStrength).catch(() => setStrength([]));
+    getRecords(db, profile.id).then(setRecords).catch(() => setRecords({}));
   }, [db, profile]));
 
   // Sin sesiones completadas no se muestran cifras de muestra.
@@ -59,6 +63,19 @@ export default function ProgressScreen() {
               </View>
             </View>
           ))}
+        </Card>
+      ) : null}
+      {Object.keys(records).length ? (
+        <Card style={{ gap: space.xs }}>
+          <Text variant="caption" muted>Récords</Text>
+          {Object.entries(records).map(([id, r]) => ({ id, r, at: Math.max(r.weight?.at ?? 0, r.e1rm?.at ?? 0, r.reps?.at ?? 0) }))
+            .sort((a, b) => b.at - a.at).slice(0, 10).map(({ id, r }) => {
+              const unit = profile?.weightUnit ?? 'kg';
+              const f = findVariant(id);
+              const name = f ? `${f.ex.es} · ${f.variant.es}` : id;
+              const text = r.weight ? `${fmtWeight(r.weight.kg, unit)} × ${r.weight.reps}${r.e1rm ? ` · 1RM estimado ${fmtWeight(r.e1rm.e1rm, unit)}` : ''}` : `${r.reps?.reps ?? 0} repeticiones`;
+              return <View key={id} accessible accessibilityLabel={`${name}: ${text}`}><Text variant="subtitle">{name}</Text><Text muted>{text}</Text></View>;
+            })}
         </Card>
       ) : null}
       {strength.length ? (
