@@ -187,4 +187,6 @@ export const migrations: string[] = [
      load_modifier REAL NOT NULL CHECK (load_modifier BETWEEN 0.4 AND 1.2),
      PRIMARY KEY (cycle_id, week_from)
    );`,
+  // V9-D: rutina rotativa (sin días fijos): Inicio ofrece la sesión pendiente más antigua y las vencidas no cortan la racha.
+  `ALTER TABLE profiles ADD COLUMN rotating INTEGER NOT NULL DEFAULT 0 CHECK (rotating IN (0,1));`,
 ];

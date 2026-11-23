@@ -37,7 +37,7 @@ export default function Home() {
       <Text variant="display">Hola{profile ? `, ${profile.alias}` : ''}</Text>
       {plan && next?.session ? (
         <Card style={{ gap: space.sm }}>
-          <Text variant="caption" muted>{next.date === toDateKey() ? 'Hoy' : `Próxima sesión · ${WEEKDAYS[weekdayOf(next.date)]} ${Number(next.date.slice(8))}`}</Text>
+          <Text variant="caption" muted>{next.date === toDateKey() ? 'Hoy' : next.date < toDateKey() ? 'Pendiente de tu rotación' : `Próxima sesión · ${WEEKDAYS[weekdayOf(next.date)]} ${Number(next.date.slice(8))}`}</Text>
           <Text variant="title">{next.session.name}</Text>
           {next.session.blocks.flatMap((b) => b.items).slice(0, 5).map((it, i) => (
             <Text key={i} muted>{describeItem(it).name}</Text>

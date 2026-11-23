@@ -1,8 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import Cycles from '../src/app/plan/cycles';
 import { migrate } from '../src/db';
 import { createCycle, getActiveCycle } from '../src/db/cycles';
-import { createProfile } from '../src/db/profiles';
+import { createProfile, isRotating } from '../src/db/profiles';
 import { CYCLE_TEMPLATES, blocksError, loadLabel } from '../src/lib/cycles';
 import { memoryDb } from '../test-utils/sqlite';
 
@@ -48,4 +48,18 @@ it('un ciclo que aún no ha empezado o ya acabó lo dice', async () => {
   await createCycle(db, profile.id, { name: 'Pasado', startDate: '2026-10-05', blocks: [{ weekFrom: 1, weekTo: 2, goal: 'Base', loadModifier: 1 }] });
   await render(<Cycles />);
   expect(await screen.findByText('Ciclo terminado')).toBeTruthy();
+});
+
+it('la rutina rotativa se activa y desactiva desde la pantalla, por perfil', async () => {
+  const { db, profile } = await seed();
+  const other = await createProfile(db, { alias: 'Beto' });
+  await render(<Cycles />);
+  const toggle = await screen.findByRole('checkbox', { name: /Rutina rotativa/ });
+  expect(toggle.props.accessibilityState).toMatchObject({ checked: false });
+  await fireEvent.press(toggle);
+  await waitFor(async () => expect(await isRotating(db, profile.id)).toBe(true));
+  expect(await isRotating(db, other.id)).toBe(false);
+  expect((await screen.findByRole('checkbox', { name: /Rutina rotativa/ })).props.accessibilityState).toMatchObject({ checked: true });
+  await fireEvent.press(screen.getByRole('checkbox', { name: /Rutina rotativa/ }));
+  await waitFor(async () => expect(await isRotating(db, profile.id)).toBe(false));
 });

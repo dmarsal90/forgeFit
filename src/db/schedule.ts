@@ -6,6 +6,7 @@ import {
   type DateKey, type Instance, type ScheduleOp,
 } from '../lib/schedule';
 import { newId } from './id';
+import { isRotating } from './profiles';
 import type { Db } from './index';
 import { loadContext } from './planContext';
 
@@ -68,13 +69,19 @@ export async function getInstances(db: Db, profileId: string, from: DateKey, to:
   return rows.map(toInstance);
 }
 
-/** Próxima sesión de entrenamiento programada desde hoy (hoy incluido). */
+export const ROTATION_BACKLOG_DAYS = 14;
+
+/**
+ * Próxima sesión de entrenamiento programada desde hoy (hoy incluido). En rutina rotativa es la pendiente más antigua de las
+ * últimas 2 semanas (aunque esté vencida) y se empieza en su propia fecha: las más antiguas quedan fuera para no arrastrar una cola eterna.
+ */
 export async function getNextInstance(db: Db, profileId: string, today: DateKey = toDateKey()): Promise<Instance | null> {
   await getInstances(db, profileId, today, addDays(today, 14), today);
   const row = await planRow(db, profileId);
   if (!row) return null;
+  const from = (await isRotating(db, profileId)) ? addDays(today, -ROTATION_BACKLOG_DAYS) : today;
   const r = await db.getFirstAsync<Row>(
-    "SELECT date, kind, status, origin, session_json, revision FROM scheduled_sessions WHERE plan_id = ? AND date >= ? AND kind = 'training' AND status = 'scheduled' ORDER BY date LIMIT 1", [row.id, today]);
+    "SELECT date, kind, status, origin, session_json, revision FROM scheduled_sessions WHERE plan_id = ? AND date >= ? AND kind = 'training' AND status = 'scheduled' ORDER BY date LIMIT 1", [row.id, from]);
   return r ? toInstance(r) : null;
 }
 
