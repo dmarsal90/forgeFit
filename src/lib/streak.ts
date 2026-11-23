@@ -13,8 +13,8 @@ export function weekStatus(days: DayRow[], today: DateKey): WeekStatus {
   return training.every((d) => d.status === 'completed') ? 'done' : 'open';
 }
 
-/** Semanas consecutivas cumplidas hasta hoy. Una semana vacía pausa (ni suma ni rompe); una abierta aún no cuenta; una fallida corta. */
-export function currentStreak(days: DayRow[], today: DateKey): number {
+/** Semanas consecutivas cumplidas hasta hoy. Una semana vacía pausa (ni suma ni rompe); una abierta aún no cuenta; una fallida corta (salvo en rutina rotativa, donde pausa). */
+export function currentStreak(days: DayRow[], today: DateKey, rotating = false): number {
   const byWeek = new Map<DateKey, DayRow[]>();
   for (const d of days) { const w = weekStart(d.date); byWeek.set(w, [...(byWeek.get(w) ?? []), d]); }
   const first = [...byWeek.keys()].sort()[0];
@@ -22,7 +22,7 @@ export function currentStreak(days: DayRow[], today: DateKey): number {
   let streak = 0;
   for (let w = weekStart(today); w >= first; w = addDays(w, -7)) {
     const s = weekStatus(byWeek.get(w) ?? [], today);
-    if (s === 'missed') break;
+    if (s === 'missed' && !rotating) break; // en rotativa, una sesión vencida sin hacer es neutra: no corta ni suma
     if (s === 'done') streak++;
   }
   return streak;

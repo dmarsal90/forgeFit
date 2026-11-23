@@ -2,10 +2,11 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { createCycle, endActiveCycle, getActiveCycle, type Cycle } from '../../db/cycles';
+import { isRotating, setRotating } from '../../db/profiles';
 import { useApp } from '../../features/AppContext';
 import { CYCLE_TEMPLATES, cyclePosition, loadLabel } from '../../lib/cycles';
 import { toDateKey } from '../../lib/schedule';
-import { Button, Card, Screen, Text } from '../../ui/components';
+import { Button, Card, Choice, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 export default function Cycles() {
@@ -13,11 +14,13 @@ export default function Cycles() {
   const [cycle, setCycle] = useState<Cycle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
+  const [rotating, setRot] = useState(false);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!profile) return;
     getActiveCycle(db, profile.id).then(setCycle, () => setCycle(null));
+    isRotating(db, profile.id).then(setRot, () => setRot(false));
   }, [db, profile, tick]);
 
   async function act(run: () => Promise<unknown>) {
@@ -38,6 +41,8 @@ export default function Cycles() {
     <Screen>
       {back}
       <Text variant="title">Periodización</Text>
+      <Choice multi selected={rotating} label="Rutina rotativa" hint="Sin días fijos: Inicio te ofrece la sesión pendiente más antigua (hasta 2 semanas atrás) y saltarte un día no rompe tu racha."
+        onPress={() => act(() => setRotating(db, profile!.id, !rotating))} />
       {cycle && pos ? (
         <>
           <Card style={{ gap: space.sm }}>

@@ -2,6 +2,7 @@ import { migrate } from '../src/db';
 import { saveDraft } from '../src/db/onboarding';
 import { applyPlanOperation } from '../src/db/planEditing';
 import { createProfile, deleteProfile } from '../src/db/profiles';
+import { setRotating } from '../src/db/profiles';
 import { applyScheduleOperation, ensureHorizon, getInstances, getNextInstance, undoScheduleOperation } from '../src/db/schedule';
 import type { Plan, PlanSession } from '../src/lib/plan';
 import { addDays } from '../src/lib/schedule';
@@ -56,6 +57,17 @@ describe('generación de instancias', () => {
     expect((await getNextInstance(db, profile.id, TODAY))?.date).toBe('2026-11-18');
     await db.runAsync("UPDATE scheduled_sessions SET status = 'completed' WHERE date = '2026-11-18'");
     expect((await getNextInstance(db, profile.id, '2026-11-18'))?.date).toBe('2026-11-20');
+  });
+  it('en rutina rotativa ofrece la pendiente más antigua de las últimas 2 semanas, aunque esté vencida', async () => {
+    const { db, profile } = await seed();
+    expect((await getNextInstance(db, profile.id, '2026-11-19'))?.date).toBe('2026-11-20'); // normal: lo vencido se ignora
+    await setRotating(db, profile.id, true);
+    expect((await getNextInstance(db, profile.id, '2026-11-19'))?.date).toBe('2026-11-16'); // A sigue pendiente
+    await db.runAsync("UPDATE scheduled_sessions SET status = 'completed' WHERE date = '2026-11-16'");
+    expect((await getNextInstance(db, profile.id, '2026-11-19'))?.date).toBe('2026-11-18'); // luego B
+    expect((await getNextInstance(db, profile.id, '2026-12-08'))?.date).toBe('2026-11-25'); // el 23-11 queda fuera de las 2 semanas
+    await setRotating(db, profile.id, false);
+    expect((await getNextInstance(db, profile.id, '2026-11-19'))?.date).toBe('2026-11-20');
   });
 });
 

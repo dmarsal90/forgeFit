@@ -54,6 +54,15 @@ export async function setWeightUnit(db: Db, id: string, unit: WeightUnit) {
   await db.runAsync('UPDATE profiles SET weight_unit = ?, updated_at = ? WHERE id = ?', [unit, new Date().toISOString(), id]);
 }
 
+// shortcut: la copia de perfil no incluye este ajuste (al restaurar vuelve a desactivado); añadirlo al formato si se pide.
+export async function setRotating(db: Db, id: string, on: boolean) {
+  await db.runAsync('UPDATE profiles SET rotating = ?, updated_at = ? WHERE id = ?', [on ? 1 : 0, new Date().toISOString(), id]);
+}
+
+export async function isRotating(db: Pick<Db, 'getFirstAsync'>, id: string): Promise<boolean> {
+  return (await db.getFirstAsync<{ rotating: number }>('SELECT rotating FROM profiles WHERE id = ?', [id]))?.rotating === 1;
+}
+
 export async function setActiveProfile(db: Db, id: string): Promise<boolean> {
   const exists = await db.getFirstAsync('SELECT 1 FROM profiles WHERE id = ? AND archived_at IS NULL', [id]);
   if (!exists) return false;

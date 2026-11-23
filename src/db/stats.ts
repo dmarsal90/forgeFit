@@ -1,3 +1,4 @@
+import { isRotating } from './profiles';
 import { currentStreak, type DayRow } from '../lib/streak';
 import { addDays, toDateKey, weekStart, type DateKey } from '../lib/schedule';
 import type { Db } from './index';
@@ -38,7 +39,7 @@ export async function getProgressStats(db: Db, profileId: string, today: DateKey
     for (const d of Object.values(w?.state.done ?? {})) if (!d.skipped) volumeKg += (d.weightKg ?? 0) * (d.reps ?? 0);
   }
   return {
-    streakWeeks: currentStreak(days, today),
+    streakWeeks: currentStreak(days, today, await isRotating(db, profileId)),
     week: { done: thisWeek.filter((d) => d.status === 'completed').length, planned: thisWeek.length },
     completedTotal: training.filter((d) => d.status === 'completed').length,
     volumeKg: Math.round(volumeKg),

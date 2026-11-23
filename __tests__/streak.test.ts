@@ -25,3 +25,11 @@ it('una semana sin sesiones pausa el contador y una sin datos devuelve 0', () =>
   expect(weekStatus([R('2026-11-10')], '2026-11-17')).toBe('empty');
   expect(currentStreak([], '2026-11-17')).toBe(0);
 });
+
+it('en rutina rotativa una semana con sesiones vencidas sin hacer no corta la racha (pausa), y hacerlas después la suma', () => {
+  const missed = [T('2026-11-09'), T('2026-11-11', 'scheduled')];
+  const days = [T('2026-11-02'), T('2026-11-04'), ...missed, T('2026-11-16'), T('2026-11-18')];
+  expect(currentStreak(days, '2026-11-19')).toBe(1); // normal: la semana del 9 corta
+  expect(currentStreak(days, '2026-11-19', true)).toBe(2); // rotativa: cuentan la del 2 y la del 16
+  expect(currentStreak([...days.slice(0, 2), T('2026-11-09'), T('2026-11-11'), ...days.slice(4)], '2026-11-19', true)).toBe(3);
+});
