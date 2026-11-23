@@ -41,6 +41,7 @@ export default function RoutinesScreen() {
             <Button variant="secondary" label="Planificar semana" icon="calendar-outline" onPress={() => router.push('/planner')} />
           </Card>
           <PlanView plan={plan} onEdit={(day) => router.push({ pathname: '/plan/edit', params: { day: String(day) } })} />
+          <Button variant="secondary" label="Periodización" icon="repeat-outline" onPress={() => router.push('/plan/cycles')} />
           <Button variant="secondary" label="Rehacer plan" onPress={() => router.push('/plan/proposal')} />
         </>
       )}

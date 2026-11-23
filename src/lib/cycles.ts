@@ -32,3 +32,15 @@ export function cyclePosition(start: DateKey, blocks: readonly CycleBlock[], tod
   const block = blocks.find((b) => week >= b.weekFrom && week <= b.weekTo);
   return block ? { state: 'running', week, total, block } : { state: 'finished', total };
 }
+
+export const CYCLE_TEMPLATES: { key: string; name: string; blocks: CycleBlock[] }[] = [
+  { key: 'hipertrofia', name: 'Hipertrofia (8 semanas)', blocks: [
+    { weekFrom: 1, weekTo: 3, goal: 'Volumen progresivo', loadModifier: 1 }, { weekFrom: 4, weekTo: 6, goal: 'Mayor intensidad', loadModifier: 1.05 },
+    { weekFrom: 7, weekTo: 7, goal: 'Pico de carga', loadModifier: 1.1 }, { weekFrom: 8, weekTo: 8, goal: 'Descarga', loadModifier: 0.6 }] },
+  { key: 'fuerza', name: 'Fuerza (6 semanas)', blocks: [
+    { weekFrom: 1, weekTo: 2, goal: 'Base', loadModifier: 1 }, { weekFrom: 3, weekTo: 4, goal: 'Mayor intensidad', loadModifier: 1.05 },
+    { weekFrom: 5, weekTo: 5, goal: 'Pico de carga', loadModifier: 1.1 }, { weekFrom: 6, weekTo: 6, goal: 'Descarga', loadModifier: 0.6 }] },
+];
+
+/** «Carga −40 %», «Carga +5 %» o «Carga normal». */
+export const loadLabel = (m: number): string => { const p = Math.round((m - 1) * 100); return p === 0 ? 'Carga normal' : `Carga ${p > 0 ? '+' : '−'}${Math.abs(p)} %`; };
