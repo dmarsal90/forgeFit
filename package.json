@@ -52,6 +52,9 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/android/"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/test-utils/fixedDate.ts"
     ]
   }
 }
