@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import DataScreen from '../src/app/more/data';
 import { migrate } from '../src/db';
+import { getFeatures } from '../src/db/features';
 import { createProfile } from '../src/db/profiles';
 import { loadFinishedWorkouts } from '../src/db/stats';
 import { memoryDb } from '../test-utils/sqlite';
@@ -55,4 +56,18 @@ it('un archivo inválido o gigante se rechaza con un mensaje y no ofrece importa
   Picker.getDocumentAsync.mockResolvedValue({ canceled: true });
   await fireEvent.press(screen.getByText('Elegir archivo CSV'));
   expect(screen.queryByText('Cancelar')).toBeNull();
+});
+
+it('los módulos se desactivan y reactivan desde la pantalla, por perfil, y avisa de que la seguridad no se apaga', async () => {
+  const { db, profile } = await setup(HEADER);
+  await render(<DataScreen />);
+  const box = async () => screen.findByRole('checkbox', { name: /Calculadora de discos/ });
+  expect((await box()).props.accessibilityState).toMatchObject({ checked: true });
+  await fireEvent.press(await box());
+  expect((await getFeatures(db, profile.id)).plates).toBe(false);
+  expect((await box()).props.accessibilityState).toMatchObject({ checked: false });
+  expect((await getFeatures(db, profile.id)).progression).toBe(true);
+  await fireEvent.press(await box());
+  expect((await getFeatures(db, profile.id)).plates).toBe(true);
+  expect(screen.getByText(/molestia o dolor.*siempre están activas/)).toBeTruthy();
 });

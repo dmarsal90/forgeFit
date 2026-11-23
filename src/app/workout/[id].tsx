@@ -5,6 +5,7 @@ import { Vibration, View } from 'react-native';
 import { newId } from '../../db/id';
 import { getRecords } from '../../db/stats';
 import { addSet, type VariantRecord } from '../../lib/records';
+import { getFeatures, type Features } from '../../db/features';
 import { loadPlateInfo, loadSuggestions, type PlateInfo } from '../../db/progression';
 import { finishWorkout, loadReplacements, loadWorkout, recordEvent, type Workout } from '../../db/workouts';
 import { useApp } from '../../features/AppContext';
@@ -45,7 +46,9 @@ export default function WorkoutScreen() {
   const [form, setForm] = useState<{ weight?: string; reps: string; rir: string; pain?: Pain }>({ reps: '', rir: '' }); // weight sin tocar (undefined) = el valor por defecto de la serie
   const [editing, setEditing] = useState<Step | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [features, setFeatures] = useState<Features | null>(null); // null = aún sin cargar: no se muestra lo opcional
   const [sug, setSug] = useState<Record<string, Suggestion>>({});
+  const sugs: Record<string, Suggestion> = features?.progression ? sug : {}; // con el módulo apagado no se muestra ni se rellena nada
   const [plateInfo, setPlateInfo] = useState<Record<string, PlateInfo>>({});
   const [records, setRecords] = useState<Record<string, VariantRecord> | null>(null); // null = aún sin cargar: no se avisa de récords
   const [banner, setBanner] = useState<string | null>(null);
@@ -53,13 +56,14 @@ export default function WorkoutScreen() {
 
   useEffect(() => { loadWorkout(db, id).then(setW).catch(() => setW(null)); }, [db, id, tick]);
   // Las sugerencias salen de las sesiones anteriores: se calculan una vez al abrir la sesión, no en cada serie.
+  useEffect(() => { if (profile) getFeatures(db, profile.id).then(setFeatures).catch(() => setFeatures(null)); }, [db, profile]);
   useEffect(() => {
-    if (!profile || !w) return;
+    if (!profile || !w || !features) return;
     getRecords(db, profile.id).then(setRecords).catch(() => setRecords(null));
     const eff = effectiveSession(w.session, w.state.variants); // con las sustituciones hechas en la sesión
-    loadSuggestions(db, profile.id, eff, unit).then(setSug).catch(() => setSug({}));
+    if (features.progression) loadSuggestions(db, profile.id, eff, unit).then(setSug).catch(() => setSug({}));
     loadPlateInfo(db, profile.id, eff).then(setPlateInfo).catch(() => setPlateInfo({}));
-  }, [db, profile, unit, w?.id, JSON.stringify(w?.state.variants)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [db, profile, unit, features, w?.id, JSON.stringify(w?.state.variants)]); // eslint-disable-line react-hooks/exhaustive-deps
   // La pantalla no se apaga mientras la sesión está activa (si no, la cuenta atrás y la serie en curso se pierden de vista).
   const running = w?.state.status === 'active';
   useEffect(() => {
@@ -89,13 +93,14 @@ export default function WorkoutScreen() {
   const steps = stepsOf(session);
   // Peso por defecto de la serie: el de la serie anterior del mismo ejercicio; en la primera, el sugerido por la progresión.
   const prevKg = step && step.round > 0 ? state.done[stepKey({ ...step, round: step.round - 1 })]?.weightKg : undefined;
-  const defaultKg = prevKg ?? (step?.round === 0 && item ? (sug[item.exerciseVariantId]?.phase?.weightKg ?? sug[item.exerciseVariantId]?.weightKg) : undefined);
+  const defaultKg = prevKg ?? (step?.round === 0 && item ? (sugs[item.exerciseVariantId]?.phase?.weightKg ?? sugs[item.exerciseVariantId]?.weightKg) : undefined);
   const weightText = form.weight ?? (defaultKg === undefined ? '' : String(kgToUnit(defaultKg, unit)));
   // Qué discos poner por lado para el peso que hay escrito (solo con barra de peso conocido y discos indicados).
   const info = item ? plateInfo[item.exerciseVariantId] : undefined;
   const typedKg = num(weightText);
   const montage = info && 'stock' in info && typedKg !== undefined && Number.isFinite(typedKg) && typedKg > 0 ? montageFor(unitToKg(typedKg, unit), info) : null;
-  const plateText = info && 'hint' in info ? info.hint : !montage ? null
+  // La información de discos se carga siempre (el calentamiento usa la barra y el escalón); el módulo solo oculta el texto.
+  const plateText = !features?.plates ? null : info && 'hint' in info ? info.hint : !montage ? null
     : montage.status === 'ok' ? `Por lado: ${montage.perSide.length ? montage.perSide.map((p) => `${p.count > 1 ? `${p.count}×` : ''}${p.label ?? fmtWeight(p.kg, unit)}`).join(' + ') : 'solo la barra'}`
     : montage.status === 'below_bar' ? 'Ese peso es menos que la barra.'
     : montage.status === 'impossible' ? `No se puede montar con tus discos. Más cerca: ${[montage.below, montage.above].filter((m) => m).map((m) => fmtWeight(m!.totalKg, unit)).join(' o ')}.`
@@ -203,11 +208,11 @@ export default function WorkoutScreen() {
               </Text>
               <Text variant="title">{stepName(step)}</Text>
               <Text muted>{item.repRange[0]}-{item.repRange[1]} repeticiones{item.rir !== undefined ? ` · RIR ${item.rir}` : ''}</Text>
-              {!editing && sug[item.exerciseVariantId] && sug[item.exerciseVariantId].kind !== 'none' ? (
-                <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sug[item.exerciseVariantId].message} ${sug[item.exerciseVariantId].reason}${sug[item.exerciseVariantId].phase ? ` ${sug[item.exerciseVariantId].phase!.text}` : ''}`}>
-                  <Text variant="subtitle">Sugerencia: {sug[item.exerciseVariantId].message}</Text>
-                  <Text variant="caption" muted>{sug[item.exerciseVariantId].reason}</Text>
-                  {sug[item.exerciseVariantId].phase ? <Text>{sug[item.exerciseVariantId].phase!.text}</Text> : null}
+              {!editing && sugs[item.exerciseVariantId] && sugs[item.exerciseVariantId].kind !== 'none' ? (
+                <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sugs[item.exerciseVariantId].message} ${sugs[item.exerciseVariantId].reason}${sugs[item.exerciseVariantId].phase ? ` ${sugs[item.exerciseVariantId].phase!.text}` : ''}`}>
+                  <Text variant="subtitle">Sugerencia: {sugs[item.exerciseVariantId].message}</Text>
+                  <Text variant="caption" muted>{sugs[item.exerciseVariantId].reason}</Text>
+                  {sugs[item.exerciseVariantId].phase ? <Text>{sugs[item.exerciseVariantId].phase!.text}</Text> : null}
                 </View>
               ) : null}
               <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={weightText} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />

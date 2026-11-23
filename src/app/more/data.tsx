@@ -1,12 +1,13 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable } from 'react-native';
+import { FEATURES, getFeatures, setFeature, type Feature, type Features } from '../../db/features';
 import { importSessionsCsv, previewSessionsCsv, type ImportPreview } from '../../db/importSessions';
 import { useApp } from '../../features/AppContext';
 import { MAX_IMPORT_CHARS } from '../../lib/csvImport';
-import { Button, Card, Screen, Text } from '../../ui/components';
+import { Button, Card, Choice, Screen, Text } from '../../ui/components';
 import { colors, space } from '../../ui/tokens';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -14,7 +15,16 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export default function DataScreen() {
   const { db, profile } = useApp();
   const [file, setFile] = useState<{ name: string; text: string; preview: ImportPreview } | null>(null);
+  const [features, setFeatures] = useState<Features | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => { if (profile) getFeatures(db, profile.id).then(setFeatures).catch(() => setFeatures(null)); }, [db, profile]);
+
+  async function toggle(f: Feature) {
+    if (!profile || !features) return;
+    try { await setFeature(db, profile.id, f, !features[f]); setFeatures(await getFeatures(db, profile.id)); }
+    catch { setMsg({ ok: false, text: 'No se pudo guardar el cambio.' }); }
+  }
 
   async function pick() {
     if (!profile) return;
@@ -60,6 +70,12 @@ export default function DataScreen() {
           <Button label="Cancelar" variant="secondary" onPress={() => setFile(null)} />
         </Card>
       ) : null}
+      <Text variant="subtitle">Módulos</Text>
+      <Text muted>Oculta lo que no uses. No se borra ningún dato y puedes volver a activarlo.</Text>
+      {features ? FEATURES.map((f) => (
+        <Choice key={f.key} multi selected={features[f.key]} label={f.label} hint={f.hint} onPress={() => toggle(f.key)} />
+      )) : null}
+      <Text variant="caption" muted>Las preguntas de molestia o dolor al registrar una serie siempre están activas.</Text>
       {msg ? <Text style={msg.ok ? undefined : { color: colors.error }} accessibilityLiveRegion="polite">{msg.text}</Text> : null}
     </Screen>
   );

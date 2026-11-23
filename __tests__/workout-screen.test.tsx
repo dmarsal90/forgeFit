@@ -3,6 +3,7 @@ import { Vibration } from 'react-native';
 import WorkoutScreen from '../src/app/workout/[id]';
 import { migrate } from '../src/db';
 import { createCycle } from '../src/db/cycles';
+import { setFeature, type Feature } from '../src/db/features';
 import { saveDraft } from '../src/db/onboarding';
 import { saveActivePlan } from '../src/db/plans';
 import { createProfile } from '../src/db/profiles';
@@ -222,13 +223,14 @@ it('vibra una sola vez al acabar el descanso y no si se salta', async () => {
 describe('sugerencia de progresión', () => {
   const benchPlan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'single' as const, items: [{ exerciseVariantId: 'bench_press.barbell', sets: 3, repRange: [6, 10] as [number, number], restSeconds: 60 }] }] })) };
 
-  async function open(withHistory: boolean, cycleModifier?: number) {
+  async function open(withHistory: boolean, cycleModifier?: number, off?: Feature) {
     const db = memoryDb();
     await migrate(db);
     const profile = await createProfile(db, { alias: 'Ana' });
     await saveActivePlan(db, profile.id, benchPlan, null);
     await db.runAsync("UPDATE training_plans SET created_at = '2026-11-01T08:00:00'");
     await ensureHorizon(db, profile.id, toDateKey(), toDateKey());
+    if (off) await setFeature(db, profile.id, off, false);
     if (cycleModifier) await createCycle(db, profile.id, { name: 'C', startDate: toDateKey(), blocks: [{ weekFrom: 1, weekTo: 1, goal: 'Descarga', loadModifier: cycleModifier }] });
     if (withHistory) {
       const old = await startWorkout(db, profile.id, toDateKey(new Date(Date.now() - 86_400_000)), Date.now() - 86_400_000);
@@ -266,6 +268,14 @@ describe('sugerencia de progresión', () => {
     expect(screen.getByLabelText('Peso (kg)').props.value).toBe('37.5');
   });
 
+  it('con el módulo de progresión desactivado no hay sugerencia ni peso relleno, aunque haya historial', async () => {
+    await open(true, 0.6, 'progression');
+    await screen.findByText(/Serie 1 de 3/);
+    expect(screen.queryByText(/Sugerencia/)).toBeNull();
+    expect(screen.queryByText(/Descarga/)).toBeNull();
+    expect(screen.getByLabelText('Peso (kg)').props.value).toBe('');
+  });
+
   it('muestra qué hacer y por qué, y rellena el peso sugerido (editable) solo en la primera serie', async () => {
     await open(true);
     expect(await screen.findByText('Sugerencia: Sube a 62.5 kg.')).toBeTruthy();
@@ -300,7 +310,7 @@ describe('sugerencia de progresión', () => {
 describe('discos por lado', () => {
   const benchPlan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'single' as const, items: [{ exerciseVariantId: 'bench_press.barbell', sets: 3, repRange: [6, 10] as [number, number], restSeconds: 60 }] }] })) };
 
-  async function open(unit: 'kg' | 'lb', plates: { unit: 'kg' | 'lb'; value: number; pairs: number }[], barKg?: number) {
+  async function open(unit: 'kg' | 'lb', plates: { unit: 'kg' | 'lb'; value: number; pairs: number }[], barKg?: number, off?: Feature) {
     const db = memoryDb();
     await migrate(db);
     const profile = await createProfile(db, { alias: 'Ana', weightUnit: unit });
@@ -309,6 +319,7 @@ describe('discos por lado', () => {
     await setItemState(db, gym, 'plates_olympic_iron', 'available');
     if (barKg !== undefined) await setAttributes(db, gym, 'barbell_olympic_20', { minKg: null, maxKg: null, stepKg: null, barKg, unit });
     await setPlates(db, gym, 'plates_olympic_iron', plates);
+    if (off) await setFeature(db, profile.id, off, false);
     await saveActivePlan(db, profile.id, benchPlan, gym);
     await db.runAsync("UPDATE training_plans SET created_at = '2026-11-01T08:00:00'");
     await ensureHorizon(db, profile.id, toDateKey(), toDateKey());
@@ -319,6 +330,14 @@ describe('discos por lado', () => {
   }
   const KG_SET = [20, 15, 10, 5, 2.5, 1.25].map((value) => ({ unit: 'kg' as const, value, pairs: 2 }));
   const LB_SET = [45, 35, 25, 10, 5, 2.5].map((value) => ({ unit: 'lb' as const, value, pairs: 2 }));
+
+  it('con el módulo de discos desactivado no se muestra el montaje, pero el resto sigue igual', async () => {
+    await open('kg', KG_SET, undefined, 'plates');
+    await fireEvent.changeText(screen.getByLabelText('Peso (kg)'), '62.5');
+    expect(await screen.findByLabelText('Peso (kg)')).toBeTruthy();
+    expect(screen.queryByText(/Por lado|No se puede montar|menos que la barra/)).toBeNull();
+    expect(await screen.findByText('Calentamiento')).toBeTruthy(); // la rampa sigue usando la barra y los discos
+  });
 
   it('dice qué discos poner por lado al escribir el peso, y avisa si no se puede montar', async () => {
     await open('kg', KG_SET);
