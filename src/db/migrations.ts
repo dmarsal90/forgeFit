@@ -169,4 +169,22 @@ export const migrations: string[] = [
      pairs INTEGER NOT NULL CHECK (pairs BETWEEN 1 AND 20),
      PRIMARY KEY (environment_id, equipment_id, unit, value)
    );`,
+  // V9-D: ciclos de periodización por perfil (un solo ciclo activo) y sus bloques de semanas; el modificador de carga es orientativo.
+  `CREATE TABLE training_cycles (
+     id TEXT PRIMARY KEY NOT NULL,
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     name TEXT NOT NULL,
+     start_date TEXT NOT NULL CHECK (start_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+     created_at TEXT NOT NULL,
+     ended_at TEXT
+   );
+   CREATE UNIQUE INDEX training_cycles_one_active ON training_cycles (profile_id) WHERE ended_at IS NULL;
+   CREATE TABLE training_blocks (
+     cycle_id TEXT NOT NULL REFERENCES training_cycles(id) ON DELETE CASCADE,
+     week_from INTEGER NOT NULL CHECK (week_from >= 1),
+     week_to INTEGER NOT NULL CHECK (week_to >= week_from),
+     goal TEXT NOT NULL,
+     load_modifier REAL NOT NULL CHECK (load_modifier BETWEEN 0.4 AND 1.2),
+     PRIMARY KEY (cycle_id, week_from)
+   );`,
 ];

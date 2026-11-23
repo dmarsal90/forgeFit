@@ -1,10 +1,13 @@
 import { ISOMETRIC } from '../lib/planEngine';
 import { findVariant } from '../lib/exercises';
 import type { PlanSession } from '../lib/plan';
+import { cyclePosition, loadLabel, phaseWeight } from '../lib/cycles';
+import { toDateKey } from '../lib/schedule';
 import { suggestProgression, variantHistory, type Suggestion } from '../lib/progression';
 import { fmtWeight, unitToKg, type WeightUnit } from '../lib/units';
 import { barSystem, equipmentIds, isBar, isPlates, loadModel, plateSystem, type OwnedItem } from '../lib/loadModel';
 import type { PlateStock } from '../lib/plates';
+import { getActiveCycle } from './cycles';
 import { getAttributes } from './equipmentAttributes';
 import { listEnvironmentPlates, toStock } from './equipmentPlates';
 import { getInventory } from './inventory';
@@ -75,13 +78,22 @@ export async function loadPlateInfo(db: Db, profileId: string, session: PlanSess
 export async function loadSuggestions(db: Db, profileId: string, session: PlanSession, unit: WeightUnit): Promise<Record<string, Suggestion>> {
   const workouts = await loadFinishedWorkouts(db, profileId, HISTORY_WORKOUTS);
   const plan = await db.getFirstAsync<{ environment_id: string | null }>("SELECT environment_id FROM training_plans WHERE profile_id = ? AND status = 'active'", [profileId]);
+  const cycle = await getActiveCycle(db, profileId);
+  const pos = cycle ? cyclePosition(cycle.startDate, cycle.blocks, toDateKey()) : null;
+  const block = pos?.state === 'running' && pos.block.loadModifier !== 1 ? pos.block : null;
   const out: Record<string, Suggestion> = {};
   for (const item of session.blocks.flatMap((b) => b.items)) {
     const id = item.exerciseVariantId;
     if (out[id]) continue;
     const seconds = ISOMETRIC.has(id.split('.')[0]);
-    out[id] = suggestProgression(variantHistory(workouts, id), { sets: item.sets, repRange: item.repRange, unit: seconds ? 'seconds' : 'reps' },
-      { ...(await loadFor(db, plan?.environment_id ?? null, id, unit)), fmt: (kg) => fmtWeight(kg, unit) });
+    const load = await loadFor(db, plan?.environment_id ?? null, id, unit);
+    const s = suggestProgression(variantHistory(workouts, id), { sets: item.sets, repRange: item.repRange, unit: seconds ? 'seconds' : 'reps' }, { ...load, fmt: (kg) => fmtWeight(kg, unit) });
+    // Solo al mantener o subir: bajar o descargar ya reducen la carga y no se apila otro recorte encima.
+    if (block && s.weightKg !== undefined && (s.kind === 'hold' || s.kind === 'increase')) {
+      const weightKg = phaseWeight(s.weightKg, block.loadModifier, load.stepKg, load.barKg);
+      s.phase = { text: `${block.goal} · ${loadLabel(block.loadModifier)}: ${fmtWeight(weightKg, unit)}`, weightKg };
+    }
+    out[id] = s;
   }
   return out;
 }
