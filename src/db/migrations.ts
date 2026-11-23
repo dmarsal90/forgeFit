@@ -189,4 +189,11 @@ export const migrations: string[] = [
    );`,
   // V9-D: rutina rotativa (sin días fijos): Inicio ofrece la sesión pendiente más antigua y las vencidas no cortan la racha.
   `ALTER TABLE profiles ADD COLUMN rotating INTEGER NOT NULL DEFAULT 0 CHECK (rotating IN (0,1));`,
+  // V9-G: módulos de interfaz activables por perfil. Solo oculta funciones: no borra ningún dato; sin fila = activado.
+  `CREATE TABLE feature_preferences (
+     profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+     feature TEXT NOT NULL CHECK (feature IN ('progression','plates')),
+     enabled INTEGER NOT NULL CHECK (enabled IN (0,1)),
+     PRIMARY KEY (profile_id, feature)
+   );`,
 ];
