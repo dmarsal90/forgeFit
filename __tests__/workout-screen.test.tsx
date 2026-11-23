@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { Vibration } from 'react-native';
 import WorkoutScreen from '../src/app/workout/[id]';
 import { migrate } from '../src/db';
+import { createCycle } from '../src/db/cycles';
 import { saveDraft } from '../src/db/onboarding';
 import { saveActivePlan } from '../src/db/plans';
 import { createProfile } from '../src/db/profiles';
@@ -221,13 +222,14 @@ it('vibra una sola vez al acabar el descanso y no si se salta', async () => {
 describe('sugerencia de progresión', () => {
   const benchPlan: Plan = { schemaVersion: 1, mode: 'local', sessions: Array.from({ length: 7 }, (_, day) => ({ day, name: 'Pecho', blocks: [{ type: 'single' as const, items: [{ exerciseVariantId: 'bench_press.barbell', sets: 3, repRange: [6, 10] as [number, number], restSeconds: 60 }] }] })) };
 
-  async function open(withHistory: boolean) {
+  async function open(withHistory: boolean, cycleModifier?: number) {
     const db = memoryDb();
     await migrate(db);
     const profile = await createProfile(db, { alias: 'Ana' });
     await saveActivePlan(db, profile.id, benchPlan, null);
     await db.runAsync("UPDATE training_plans SET created_at = '2026-11-01T08:00:00'");
     await ensureHorizon(db, profile.id, toDateKey(), toDateKey());
+    if (cycleModifier) await createCycle(db, profile.id, { name: 'C', startDate: toDateKey(), blocks: [{ weekFrom: 1, weekTo: 1, goal: 'Descarga', loadModifier: cycleModifier }] });
     if (withHistory) {
       const old = await startWorkout(db, profile.id, toDateKey(new Date(Date.now() - 86_400_000)), Date.now() - 86_400_000);
       for (const round of [0, 1, 2]) await recordEvent(db, old, { type: 'set_done', block: 0, item: 0, round, weightKg: 60, reps: 10 });
@@ -255,6 +257,13 @@ describe('sugerencia de progresión', () => {
     await fireEvent.press(screen.getByRole('button', { name: /Completar serie/ }));
     await screen.findByText(/Serie 2 de 3/);
     expect(screen.queryByText('¡Nuevo récord!')).toBeNull();
+  });
+
+  it('en una semana de descarga muestra la carga de la fase aparte y rellena ese peso', async () => {
+    await open(true, 0.6);
+    expect(await screen.findByText('Sugerencia: Sube a 62.5 kg.')).toBeTruthy(); // la regla no cambia
+    expect(screen.getByText('Descarga · Carga −40 %: 37.5 kg')).toBeTruthy();
+    expect(screen.getByLabelText('Peso (kg)').props.value).toBe('37.5');
   });
 
   it('muestra qué hacer y por qué, y rellena el peso sugerido (editable) solo en la primera serie', async () => {

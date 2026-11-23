@@ -33,6 +33,12 @@ export function cyclePosition(start: DateKey, blocks: readonly CycleBlock[], tod
   return block ? { state: 'running', week, total, block } : { state: 'finished', total };
 }
 
+/** Carga de la fase: `kg` por el modificador, llevada a una carga posible (barra + múltiplos del escalón) y nunca por debajo de la barra. */
+export function phaseWeight(kg: number, modifier: number, stepKg: number, barKg = 0): number {
+  const w = barKg + Math.round((kg * modifier - barKg) / stepKg) * stepKg;
+  return Math.round(Math.max(w, barKg) * 100) / 100;
+}
+
 export const CYCLE_TEMPLATES: { key: string; name: string; blocks: CycleBlock[] }[] = [
   { key: 'hipertrofia', name: 'Hipertrofia (8 semanas)', blocks: [
     { weekFrom: 1, weekTo: 3, goal: 'Volumen progresivo', loadModifier: 1 }, { weekFrom: 4, weekTo: 6, goal: 'Mayor intensidad', loadModifier: 1.05 },

@@ -3,6 +3,7 @@ import { setAttributes } from '../src/db/equipmentAttributes';
 import { ensureEnvironment, setItemState } from '../src/db/inventory';
 import { saveActivePlan } from '../src/db/plans';
 import { setPlates } from '../src/db/equipmentPlates';
+import { createCycle } from '../src/db/cycles';
 import { loadPlateInfo, loadSuggestions } from '../src/db/progression';
 import { createProfile } from '../src/db/profiles';
 import { ensureHorizon } from '../src/db/schedule';
@@ -182,5 +183,42 @@ describe('discos indicados (kg, lb o ambos)', () => {
     await setPlates(db, gym, 'plates_olympic_iron', [{ unit: 'kg', value: 20, pairs: 2 }, { unit: 'lb', value: 2.5, pairs: 2 }]); // el más pequeño está en lb
     const s = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
     expect(s.weightKg).toBeCloseTo(60.82, 1); // el siguiente montaje posible con barra de 20 kg y pares de 2 × 2,5 lb (60 no es uno de ellos)
+  });
+});
+
+describe('fase del ciclo activo', () => {
+  const block = (goal: string, loadModifier: number) => [{ weekFrom: 1, weekTo: 1, goal, loadModifier }];
+  const start = '2026-11-16'; // semana de «hoy» fijado en los tests (18-11-2026)
+
+  it('en descarga añade la carga de la fase, ajustada al escalón, sin cambiar la regla ni el mensaje', async () => {
+    const { db, a } = await setup();
+    await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
+    await createCycle(db, a.id, { name: 'C', startDate: start, blocks: block('Descarga', 0.6) });
+    const s = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'];
+    expect(s).toMatchObject({ kind: 'increase', weightKg: 62.5, message: 'Sube a 62.5 kg.', phase: { weightKg: 37.5, text: 'Descarga · Carga −40 %: 37.5 kg' } }); // 62.5 × 0.6 = 37.5
+  });
+  it('no añade nada con carga normal, sin ciclo, fuera de fecha, sin peso o si la regla ya baja la carga', async () => {
+    const { db, a } = await setup();
+    await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'].phase).toBeUndefined();
+    await createCycle(db, a.id, { name: 'C', startDate: start, blocks: block('Base', 1) });
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'].phase).toBeUndefined();
+    await createCycle(db, a.id, { name: 'C', startDate: '2026-12-07', blocks: block('Descarga', 0.6) });
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'].phase).toBeUndefined(); // aún no empieza
+    const { db: db2, a: a2 } = await setup();
+    await createCycle(db2, a2.id, { name: 'C', startDate: start, blocks: block('Descarga', 0.6) });
+    expect((await loadSuggestions(db2, a2.id, session, 'kg'))['bench_press.barbell'].phase).toBeUndefined(); // sin historial no hay peso
+  });
+  it('en el pico sube la carga; con barra, queda en barra + múltiplos del escalón y no baja de la barra', async () => {
+    const { db, a, gym } = await setup();
+    await setItemState(db, gym, 'barbell_olympic_20', 'available');
+    await setItemState(db, gym, 'plates_olympic_iron', 'available');
+    await setAttributes(db, gym, 'plates_olympic_iron', { minKg: null, maxKg: null, stepKg: 1.25, barKg: null });
+    await train(db, a.id, '2026-11-16', 1000, [10, 10, 10]);
+    await createCycle(db, a.id, { name: 'C', startDate: start, blocks: block('Pico', 1.1) });
+    const peak = (await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'].phase;
+    expect(peak?.weightKg).toBe(70); // 62.5 × 1.1 = 68.75 → 20 + 20 × 2.5
+    await createCycle(db, a.id, { name: 'D', startDate: start, blocks: block('Descarga', 0.4) });
+    expect((await loadSuggestions(db, a.id, session, 'kg'))['bench_press.barbell'].phase?.weightKg).toBe(25); // 62.5 × 0.4 = 25 = barra + 2 escalones
   });
 });

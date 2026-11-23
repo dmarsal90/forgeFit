@@ -1,7 +1,7 @@
 import { migrate } from '../src/db';
 import { createCycle, endActiveCycle, getActiveCycle } from '../src/db/cycles';
 import { createProfile } from '../src/db/profiles';
-import { blocksError, cyclePosition, type CycleBlock } from '../src/lib/cycles';
+import { blocksError, cyclePosition, phaseWeight, type CycleBlock } from '../src/lib/cycles';
 import { memoryDb } from '../test-utils/sqlite';
 
 const B = (weekFrom: number, weekTo: number, loadModifier = 1, goal = 'Volumen'): CycleBlock => ({ weekFrom, weekTo, goal, loadModifier });
@@ -61,5 +61,14 @@ describe('ciclos guardados', () => {
     await createCycle(db, a.id, { name: 'Uno', startDate: '2026-11-02', blocks });
     await db.runAsync('DELETE FROM profiles WHERE id = ?', [a.id]);
     expect((await db.getFirstAsync<{ n: number }>('SELECT (SELECT COUNT(*) FROM training_cycles) + (SELECT COUNT(*) FROM training_blocks) AS n'))?.n).toBe(0);
+  });
+});
+
+describe('phaseWeight', () => {
+  it('escala por el modificador y deja una carga posible, sin bajar nunca de la barra', () => {
+    expect(phaseWeight(62.5, 0.6, 2.5)).toBe(37.5);
+    expect(phaseWeight(60, 0.6, 2.5)).toBe(35);
+    expect(phaseWeight(62.5, 1.1, 2.5, 20)).toBe(70);
+    expect(phaseWeight(22.5, 0.4, 2.5, 20)).toBe(20); // 9 kg quedaría por debajo de la barra
   });
 });

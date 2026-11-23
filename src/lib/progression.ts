@@ -10,6 +10,7 @@ export type Suggestion = {
   targetReps?: number; // repeticiones (o segundos) a buscar
   message: string;
   reason: string; // por qué, con los datos de la última sesión
+  phase?: { text: string; weightKg: number }; // ajuste orientativo de la fase del ciclo activo; no sustituye a la regla
 };
 export type Options = { stepKg?: number; barKg?: number; fmt?: (kg: number) => string }; // barKg: peso de la barra (las cargas posibles son barra + múltiplos del escalón)
 

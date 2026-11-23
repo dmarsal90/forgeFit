@@ -89,7 +89,7 @@ export default function WorkoutScreen() {
   const steps = stepsOf(session);
   // Peso por defecto de la serie: el de la serie anterior del mismo ejercicio; en la primera, el sugerido por la progresión.
   const prevKg = step && step.round > 0 ? state.done[stepKey({ ...step, round: step.round - 1 })]?.weightKg : undefined;
-  const defaultKg = prevKg ?? (step?.round === 0 && item ? sug[item.exerciseVariantId]?.weightKg : undefined);
+  const defaultKg = prevKg ?? (step?.round === 0 && item ? (sug[item.exerciseVariantId]?.phase?.weightKg ?? sug[item.exerciseVariantId]?.weightKg) : undefined);
   const weightText = form.weight ?? (defaultKg === undefined ? '' : String(kgToUnit(defaultKg, unit)));
   // Qué discos poner por lado para el peso que hay escrito (solo con barra de peso conocido y discos indicados).
   const info = item ? plateInfo[item.exerciseVariantId] : undefined;
@@ -204,9 +204,10 @@ export default function WorkoutScreen() {
               <Text variant="title">{stepName(step)}</Text>
               <Text muted>{item.repRange[0]}-{item.repRange[1]} repeticiones{item.rir !== undefined ? ` · RIR ${item.rir}` : ''}</Text>
               {!editing && sug[item.exerciseVariantId] && sug[item.exerciseVariantId].kind !== 'none' ? (
-                <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sug[item.exerciseVariantId].message} ${sug[item.exerciseVariantId].reason}`}>
+                <View style={{ gap: space.xs }} accessible accessibilityLabel={`Sugerencia: ${sug[item.exerciseVariantId].message} ${sug[item.exerciseVariantId].reason}${sug[item.exerciseVariantId].phase ? ` ${sug[item.exerciseVariantId].phase!.text}` : ''}`}>
                   <Text variant="subtitle">Sugerencia: {sug[item.exerciseVariantId].message}</Text>
                   <Text variant="caption" muted>{sug[item.exerciseVariantId].reason}</Text>
+                  {sug[item.exerciseVariantId].phase ? <Text>{sug[item.exerciseVariantId].phase!.text}</Text> : null}
                 </View>
               ) : null}
               <Field label={`Peso (${unit})`} keyboardType="decimal-pad" value={weightText} onChangeText={(v) => setForm((f) => ({ ...f, weight: v }))} />
