@@ -26,6 +26,7 @@ export default function MoreScreen() {
       <Text variant="title">Más</Text>
       <Button label="Perfiles" icon="people-outline" variant="secondary" onPress={() => router.push('/profiles')} />
       <Button label="Historial del plan" icon="time-outline" variant="secondary" onPress={() => router.push('/plan/history')} />
+      <Button label="Importar sesiones (CSV)" icon="push-outline" variant="secondary" onPress={() => router.push('/more/data')} />
       <Button label="Exportar sesiones (CSV)" icon="download-outline" variant="secondary" onPress={exportSessions} />
       {msg ? <Text style={msg.ok ? undefined : { color: colors.error }} accessibilityLiveRegion="polite">{msg.text}</Text> : null}
       <Text variant="caption" muted>Entornos, reloj y datos llegarán en fases posteriores.</Text>
