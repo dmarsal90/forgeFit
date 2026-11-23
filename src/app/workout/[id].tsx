@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { Vibration, View } from 'react-native';
 import { newId } from '../../db/id';
 import { getRecords } from '../../db/stats';
 import { addSet, type VariantRecord } from '../../lib/records';
@@ -59,6 +60,21 @@ export default function WorkoutScreen() {
     loadSuggestions(db, profile.id, eff, unit).then(setSug).catch(() => setSug({}));
     loadPlateInfo(db, profile.id, eff).then(setPlateInfo).catch(() => setPlateInfo({}));
   }, [db, profile, unit, w?.id, JSON.stringify(w?.state.variants)]); // eslint-disable-line react-hooks/exhaustive-deps
+  // La pantalla no se apaga mientras la sesión está activa (si no, la cuenta atrás y la serie en curso se pierden de vista).
+  const running = w?.state.status === 'active';
+  useEffect(() => {
+    if (!running) return;
+    activateKeepAwakeAsync('workout').catch(() => {}); // sin soporte: la sesión sigue igual, solo se apaga la pantalla
+    return () => { deactivateKeepAwake('workout').catch(() => {}); };
+  }, [running]);
+  // Aviso al acabar el descanso: una sola vibración por descanso (se identifica por su inicio), también si se ajusta a 0.
+  const buzzed = useRef<number | null>(null);
+  const liveRest = w && w.state.status === 'active' ? w.state.rest : null;
+  useEffect(() => {
+    if (!liveRest || buzzed.current === liveRest.startedAt || now - liveRest.startedAt < liveRest.seconds * 1000) return;
+    buzzed.current = liveRest.startedAt;
+    Vibration.vibrate(400);
+  }, [liveRest, now]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   if (w === undefined) return <Screen><Text muted>Cargando…</Text></Screen>;
@@ -172,6 +188,10 @@ export default function WorkoutScreen() {
           {rest ? (
             <Card style={{ gap: space.sm }}>
               <Text variant="subtitle" accessibilityLiveRegion="polite">{remaining > 0 ? `Descanso ${mmss(remaining)}` : 'Descanso terminado'}</Text>
+              <View style={{ flexDirection: 'row', gap: space.sm }}>
+                <View style={{ flex: 1 }}><Button variant="secondary" label="Quitar 15 s" onPress={() => send({ type: 'rest_adjust', seconds: -15 })} /></View>
+                <View style={{ flex: 1 }}><Button variant="secondary" label="Añadir 15 s" onPress={() => send({ type: 'rest_adjust', seconds: 15 })} /></View>
+              </View>
               <Button variant="secondary" label="Saltar descanso" onPress={() => send({ type: 'rest_end' })} />
             </Card>
           ) : null}

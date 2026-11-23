@@ -12,6 +12,7 @@ export const eventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('pause') }),
   z.object({ type: z.literal('resume') }),
   z.object({ type: z.literal('rest_end') }),
+  z.object({ type: z.literal('rest_adjust'), seconds: z.number().int().min(-300).max(300) }), // alarga o acorta el descanso en curso
   z.object({ type: z.literal('finish') }),
   z.object({ type: z.literal('set_done'), ...stepRef, ...perf }),
   z.object({ type: z.literal('skip'), ...stepRef }),
@@ -34,6 +35,8 @@ export type WorkoutState = {
   variants: Record<string, string>; // «bloque.ítem» → variante que sustituye a la del plan (el plan congelado no se toca)
   activeMs: number;
 };
+
+export const MAX_REST = 900; // el descanso ajustado a mano no pasa de 15 min
 
 export const stepKey = (s: Step) => `${s.block}.${s.item}.${s.round}`;
 
@@ -66,6 +69,7 @@ export function reduce(session: PlanSession, events: Timed[], now: number): Work
       since = at; st.status = 'active';
       if (st.rest) st.rest = { ...st.rest, startedAt: st.rest.startedAt + (at - pausedAt) }; // la pausa no consume descanso
     } else if (e.type === 'rest_end') st.rest = null;
+    else if (e.type === 'rest_adjust' && st.status === 'active' && st.rest) st.rest = { ...st.rest, seconds: Math.min(MAX_REST, Math.max(0, st.rest.seconds + e.seconds)) };
     else if (e.type === 'finish' && (st.status === 'active' || st.status === 'paused')) {
       if (st.status === 'active') st.activeMs += at - since;
       st.status = 'finished'; st.rest = null;
